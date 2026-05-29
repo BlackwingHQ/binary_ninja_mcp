@@ -651,6 +651,99 @@ def find_bytes(
 
 
 @mcp.tool()
+def find_text(
+    text: str,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int = 100,
+    case_sensitive: bool = True,
+) -> list:
+    """
+    Find non-overlapping occurrences of a text string anywhere in the binary.
+
+    Distinct from `list_strings` / `list_all_strings`, which only see
+    BN-defined string objects. `find_text` greps the raw bytes, so it
+    surfaces text that BN didn't recognize as a string (embedded format
+    specifiers, code-adjacent text, etc.).
+
+    Args:
+        text: Search string. Encoded as UTF-8 for the match.
+        start: Optional starting address (hex like "0x401000" or decimal).
+        end: Optional ending address (exclusive).
+        limit: Cap on results (default 100). 0 or negative means unlimited.
+        case_sensitive: When False, uses BN's case-insensitive match flag
+            if the API exposes it.
+
+    Returns:
+        List of "<address>\\t<function|->" lines, or an error /
+        "(no matches)" sentinel.
+    """
+    if not text:
+        return ["Error: text is required"]
+    params: dict = {
+        "text": text,
+        "limit": limit,
+        "caseSensitive": "1" if case_sensitive else "0",
+    }
+    if start is not None:
+        params["start"] = start
+    if end is not None:
+        params["end"] = end
+    data = get_json("findText", params)
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    matches = data.get("matches", []) if isinstance(data, dict) else []
+    if not matches:
+        return ["(no matches)"]
+    return [f"{m.get('address')}\t{m.get('function') or '-'}" for m in matches]
+
+
+@mcp.tool()
+def find_constant(
+    value: str,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int = 100,
+) -> list:
+    """
+    Find non-overlapping occurrences of a numeric constant in instructions.
+
+    Backed by BN's `find_next_constant`, which scans *instructions* for
+    the literal value — different from `find_bytes`, which scans raw
+    bytes. Use this for magic values that appear as immediates ("where is
+    0xCAFEBABE loaded?", "where else is the polynomial 0xEDB88320 used?").
+
+    Args:
+        value: Integer constant. Hex (with or without `0x`) or decimal.
+        start: Optional starting address (hex like "0x401000" or decimal).
+        end: Optional ending address (exclusive).
+        limit: Cap on results (default 100). 0 or negative means unlimited.
+
+    Returns:
+        List of "<address>\\t<function|->" lines, or an error /
+        "(no matches)" sentinel.
+    """
+    if not value:
+        return ["Error: value is required"]
+    params: dict = {"value": value, "limit": limit}
+    if start is not None:
+        params["start"] = start
+    if end is not None:
+        params["end"] = end
+    data = get_json("findConstant", params)
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    matches = data.get("matches", []) if isinstance(data, dict) else []
+    if not matches:
+        return ["(no matches)"]
+    return [f"{m.get('address')}\t{m.get('function') or '-'}" for m in matches]
+
+
+@mcp.tool()
 def define_user_symbol(address: str, name: str, kind: str = "data") -> str:
     """
     Create a user symbol (label) at an address.

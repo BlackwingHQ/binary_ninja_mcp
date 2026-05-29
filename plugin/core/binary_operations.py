@@ -4339,6 +4339,165 @@ class BinaryOperations:
             "removed_declaration": prior_decl,
         }
 
+    def _find_flag_insensitive(self) -> Any | None:
+        """Return BN's FindCaseInsensitive enum value if available, else None."""
+        try:
+            find_flag_enum = getattr(bn, "FindFlag", None) or getattr(
+                getattr(bn, "enums", None), "FindFlag", None
+            )
+            if find_flag_enum is not None:
+                return getattr(find_flag_enum, "FindCaseInsensitive", None)
+        except Exception:
+            pass
+        return None
+
+    def _scan(
+        self,
+        find_next: Any,
+        target: Any,
+        start: int | None,
+        end: int | None,
+        limit: int,
+        advance: int,
+        extra_kwargs: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Generic loop around a BN ``find_next_*`` method.
+
+        Shared between find_bytes, find_text, and find_constant. Caller
+        provides the BN method, the target to look for, search bounds,
+        result cap, the per-hit advance, and any version-specific kwargs.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        if start is None:
+            start = int(getattr(bv, "start", 0))
+        view_end_attr = getattr(bv, "end", None)
+        view_end = int(view_end_attr) if view_end_attr is not None else None
+        if end is None:
+            end = view_end
+        elif view_end is not None:
+            end = min(int(end), view_end)
+
+        kwargs = dict(extra_kwargs or {})
+        matches: list[dict[str, Any]] = []
+        cur = int(start)
+        max_iter = limit if limit > 0 else 1_000_000
+        for _ in range(max_iter):
+            if end is not None and cur >= end:
+                break
+            try:
+                hit = find_next(cur, target, **kwargs)
+            except TypeError:
+                # Older BN that doesn't accept these kwargs; retry minimal.
+                try:
+                    hit = find_next(cur, target)
+                except Exception as e:
+                    bn.log_warn(f"find_next_* raised: {e}")
+                    break
+            except Exception as e:
+                bn.log_warn(f"find_next_* raised: {e}")
+                break
+            if hit is None:
+                break
+            addr = int(hit)
+            if end is not None and addr >= end:
+                break
+            fn_name: str | None = None
+            try:
+                getter = getattr(bv, "get_functions_containing", None)
+                fns = getter(addr) if callable(getter) else []
+                if fns:
+                    fn_name = getattr(fns[0], "name", None)
+            except Exception:
+                fn_name = None
+            matches.append({"address": hex(addr), "function": fn_name})
+            if limit > 0 and len(matches) >= limit:
+                break
+            cur = addr + max(advance, 1)
+        return matches
+
+    def find_text(
+        self,
+        text: str,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int = 100,
+        case_sensitive: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Find non-overlapping occurrences of a text string in the view.
+
+        Distinct from `/strings`: this greps raw bytes anywhere in the
+        binary (data *and* code), whereas `/strings` enumerates only
+        BN-defined string objects.
+
+        Args:
+            text: Search text. Empty strings are rejected.
+            start: Optional starting address (inclusive). Defaults to view start.
+            end: Optional ending address (exclusive). Defaults to view end.
+            limit: Cap on results. 0 or negative means "no cap".
+            case_sensitive: When False and the BN API exposes
+                `FindFlag.FindCaseInsensitive`, the search uses it.
+
+        Returns:
+            List of ``{"address": "0x...", "function": <name|None>}``.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        if not text:
+            raise ValueError("Empty text")
+        bv = self._current_view
+        find_next = getattr(bv, "find_next_text", None)
+        if not callable(find_next):
+            raise RuntimeError(
+                "BinaryView.find_next_text is unavailable in this Binary Ninja version"
+            )
+
+        extra_kwargs: dict[str, Any] = {}
+        if not case_sensitive:
+            flag = self._find_flag_insensitive()
+            if flag is not None:
+                extra_kwargs["flags"] = flag
+
+        advance = max(len(text.encode("utf-8", errors="ignore")), 1)
+        return self._scan(
+            find_next, text, start, end, limit, advance, extra_kwargs
+        )
+
+    def find_constant(
+        self,
+        value: int,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Find non-overlapping occurrences of an immediate constant.
+
+        Backed by `BinaryView.find_next_constant`, which searches
+        *instructions* for the literal value — different from
+        `/findBytes`, which scans raw bytes. Use this to locate magic
+        values that appear as immediates rather than as byte sequences in
+        data.
+
+        Args:
+            value: The integer constant to search for.
+            start: Optional starting address (inclusive). Defaults to view start.
+            end: Optional ending address (exclusive). Defaults to view end.
+            limit: Cap on results. 0 or negative means "no cap".
+
+        Returns:
+            List of ``{"address": "0x...", "function": <name|None>}``.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        find_next = getattr(bv, "find_next_constant", None)
+        if not callable(find_next):
+            raise RuntimeError(
+                "BinaryView.find_next_constant is unavailable in this Binary Ninja version"
+            )
+        return self._scan(find_next, int(value), start, end, limit, advance=1)
+
     def find_bytes(
         self,
         pattern: bytes,

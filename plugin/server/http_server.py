@@ -913,6 +913,152 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     }
                 )
 
+            elif path == "/findText":
+                text = params.get("text") or params.get("query") or params.get("q")
+                if not text:
+                    self._send_json_response(
+                        {
+                            "error": "Missing text parameter",
+                            "help": (
+                                "Use ?text=<string>. Optional: start (hex/dec), end "
+                                "(hex/dec), limit (default 100; 0 or negative = unlimited), "
+                                "caseSensitive (1/0; default 1)."
+                            ),
+                        },
+                        400,
+                    )
+                    return
+
+                def _parse_addr_or_none(val: str | None) -> int | None:
+                    if val is None or val == "":
+                        return None
+                    v = val.strip()
+                    if v.startswith("0x") or v.startswith("0X"):
+                        return int(v, 16)
+                    if any(c in "abcdefABCDEF" for c in v):
+                        return int(v, 16)
+                    return int(v, 10)
+
+                try:
+                    start_addr = _parse_addr_or_none(params.get("start"))
+                    end_addr = _parse_addr_or_none(params.get("end"))
+                except ValueError as ve:
+                    self._send_json_response({"error": f"Invalid address: {ve}"}, 400)
+                    return
+
+                find_limit = parse_int_or_default(params.get("limit"), 100)
+                cs_raw = params.get("caseSensitive") or params.get("case_sensitive")
+                case_sensitive = True
+                if cs_raw is not None:
+                    case_sensitive = str(cs_raw).strip().lower() not in (
+                        "0",
+                        "false",
+                        "no",
+                        "off",
+                    )
+
+                try:
+                    matches = self.binary_ops.find_text(
+                        text,
+                        start=start_addr,
+                        end=end_addr,
+                        limit=find_limit,
+                        case_sensitive=case_sensitive,
+                    )
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                    return
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                    return
+                except Exception as e:
+                    bn.log_error(f"Error handling findText: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+                    return
+
+                self._send_json_response(
+                    {
+                        "text": text,
+                        "case_sensitive": case_sensitive,
+                        "count": len(matches),
+                        "matches": matches,
+                    }
+                )
+
+            elif path == "/findConstant":
+                value_str = params.get("value") or params.get("constant")
+                if not value_str:
+                    self._send_json_response(
+                        {
+                            "error": "Missing value parameter",
+                            "help": (
+                                "Use ?value=<int> (hex like 0xCAFEBABE or decimal). "
+                                "Optional: start, end, limit (default 100)."
+                            ),
+                        },
+                        400,
+                    )
+                    return
+
+                try:
+                    s = value_str.strip()
+                    if s.startswith("0x") or s.startswith("0X"):
+                        value_int = int(s, 16)
+                    elif any(c in "abcdefABCDEF" for c in s):
+                        value_int = int(s, 16)
+                    else:
+                        value_int = int(s, 10)
+                except ValueError as ve:
+                    self._send_json_response(
+                        {"error": f"Invalid integer value: {ve}"}, 400
+                    )
+                    return
+
+                def _parse_addr_or_none2(val: str | None) -> int | None:
+                    if val is None or val == "":
+                        return None
+                    v = val.strip()
+                    if v.startswith("0x") or v.startswith("0X"):
+                        return int(v, 16)
+                    if any(c in "abcdefABCDEF" for c in v):
+                        return int(v, 16)
+                    return int(v, 10)
+
+                try:
+                    start_addr = _parse_addr_or_none2(params.get("start"))
+                    end_addr = _parse_addr_or_none2(params.get("end"))
+                except ValueError as ve:
+                    self._send_json_response({"error": f"Invalid address: {ve}"}, 400)
+                    return
+
+                find_limit = parse_int_or_default(params.get("limit"), 100)
+
+                try:
+                    matches = self.binary_ops.find_constant(
+                        value_int,
+                        start=start_addr,
+                        end=end_addr,
+                        limit=find_limit,
+                    )
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                    return
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                    return
+                except Exception as e:
+                    bn.log_error(f"Error handling findConstant: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+                    return
+
+                self._send_json_response(
+                    {
+                        "value": hex(value_int),
+                        "count": len(matches),
+                        "matches": matches,
+                    }
+                )
+
             elif path == "/getCallers":
                 identifiers = self._extract_identifiers(params)
                 if not identifiers:

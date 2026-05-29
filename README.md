@@ -184,6 +184,8 @@ The following table lists the available MCP functions for use:
 | `retype_variable`                                                    | Retype variable inside a given function.                                                                     |
 | `search_functions_by_name`                                           | Search for functions whose name contains the given substring.                                                |
 | `find_bytes(pattern, start, end, limit)`                             | Find non-overlapping occurrences of a byte pattern. Pattern is hex (e.g. `"deadbeef"` or `"90 90 90"`). `start`/`end` are optional address bounds; `limit` caps results (0 = unlimited). |
+| `find_text(text, start, end, limit, case_sensitive)`                 | Find non-overlapping occurrences of a text string anywhere in the binary's bytes (data *and* code). Surfaces text BN didn't recognize as a string. |
+| `find_constant(value, start, end, limit)`                            | Find non-overlapping occurrences of a numeric constant in *instructions* (different from `find_bytes`, which scans raw bytes). |
 | `define_user_symbol(address, name, kind)`                            | Create a user symbol (label) at an address. `kind` is `"data"` (default) or `"function"`.                     |
 | `undefine_user_symbol(address)`                                      | Remove the user symbol at an address. Refuses to act on auto-generated symbols.                              |
 | `undefine_user_type(name)`                                           | Remove a user-defined type by name. Auto/library types are rejected (returns 404).                           |
@@ -228,6 +230,8 @@ These are the list of HTTP endpoints that can be called:
 - `/strings/filter?offset=<n>&limit=<m>&filter=<substr>`: Filtered strings.
 - `/searchTypes?query=<substr>&offset=<n>&limit=<m>`: Search local types by substring.
 - `/findBytes?pattern=<hex>&start=<addr>&end=<addr>&limit=<n>`: Find non-overlapping byte-pattern occurrences across the binary. Pattern tolerates spaces and `0x` prefixes (e.g. `deadbeef`, `de ad be ef`, `0xde 0xad`). `start`/`end` are optional address bounds; `limit` defaults to 100 (0 or negative = unlimited).
+- `/findText?text=<string>&start=<addr>&end=<addr>&limit=<n>&caseSensitive=<1|0>`: Find non-overlapping text occurrences across the binary (raw bytes, not just BN-defined strings). `caseSensitive` defaults to 1.
+- `/findConstant?value=<int>&start=<addr>&end=<addr>&limit=<n>`: Find non-overlapping instruction-level matches of a numeric constant. `value` accepts hex (`0xCAFEBABE`) or decimal.
 - `/defineUserSymbol?address=<addr>&name=<name>&kind=<data|function>`: Create a user symbol at an address. `kind` defaults to `data`.
 - `/undefineUserSymbol?address=<addr>`: Remove the user symbol at an address. Returns 404 if no symbol exists there or if BN refuses (e.g. auto-generated symbol).
 - `/undefineUserType?name=<typeName>`: Remove a user-defined type. Returns 404 if no user type by that name exists, or if BN refuses to remove it.
