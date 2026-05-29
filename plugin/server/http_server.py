@@ -1686,6 +1686,15 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling undefineUserDataVar: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path == "/updateAnalysisAndWait":
+                try:
+                    result = self.binary_ops.update_analysis_and_wait()
+                    self._send_json_response(result)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling updateAnalysisAndWait: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
             elif path == "/platforms":
                 try:
                     self._send_json_response(self.endpoints.list_platforms())

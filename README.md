@@ -189,6 +189,7 @@ The following table lists the available MCP functions for use:
 | `undefine_user_type(name)`                                           | Remove a user-defined type by name. Auto/library types are rejected (returns 404).                           |
 | `define_user_data_var(address, type)`                                | Type a global at an address. `type` is C-style (e.g. `"uint8_t"`, `"struct Foo *"`). Propagates the type through every xref. |
 | `undefine_user_data_var(address)`                                    | Remove a user data variable at an address. Returns 404 if none exists.                                        |
+| `update_analysis()`                                                  | Force a full Binary Ninja reanalysis and block until idle. Use after batch mutations so later queries see propagated state. May be slow on large binaries. |
 | `search_types(query, offset, count)`                                 | Search local Types by substring (name/decl).                                                                 |
 | `set_comment`                                                        | Set a comment at a specific address.                                                                         |
 | `set_function_comment`                                               | Set a comment for a function.                                                                                |
@@ -226,6 +227,7 @@ These are the list of HTTP endpoints that can be called:
 - `/undefineUserType?name=<typeName>`: Remove a user-defined type. Returns 404 if no user type by that name exists, or if BN refuses to remove it.
 - `/defineUserDataVar?address=<addr>&type=<cType>`: Type a global at an address. `type` is C-style (`uint8_t`, `struct Foo *`, `char[16]`).
 - `/undefineUserDataVar?address=<addr>`: Remove the user data variable at an address. Returns 404 if no data variable exists there.
+- `/updateAnalysisAndWait`: Force a full reanalysis and block until BN reports analysis is idle. Returns `{status, duration_ms, analysis_info}`. No client-side timeout — may run for many seconds on large binaries.
 - `/patch` or `/patchBytes?address=<addr>&data=<hex>&save_to_file=<bool>`: Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Address: hex (e.g., "0x401000") or decimal. Data: hex string (e.g., "90 90"). `save_to_file` (default True) saves to disk and re-signs on macOS.
 - `/renameVariables`: Batch rename locals in a function. Parameters:
   - Function: one of `functionAddress`, `address`, `function`, `functionName`, or `name`.

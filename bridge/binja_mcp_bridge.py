@@ -768,6 +768,37 @@ def undefine_user_data_var(address: str) -> str:
 
 
 @mcp.tool()
+def update_analysis() -> str:
+    """
+    Force a full Binary Ninja reanalysis and block until idle.
+
+    Run after a batch of mutations (rename, retype, declare_c_type,
+    define_user_symbol, define_user_data_var, etc.) when subsequent queries
+    need to observe propagated state — type-through-xref inference, new
+    callers/callees, updated decompilation, etc. May be slow on large
+    binaries; no client-side timeout is applied.
+
+    Returns:
+        Status string including wall-clock duration of the analysis pass.
+    """
+    # Pass timeout=None so we wait as long as BN needs. Default 5s would
+    # almost never let a real reanalysis finish.
+    data = get_json("updateAnalysisAndWait", timeout=None)
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        ms = data.get("duration_ms")
+        info = data.get("analysis_info") or {}
+        state = info.get("state") if isinstance(info, dict) else None
+        if state:
+            return f"Analysis settled in {ms} ms (state: {state})"
+        return f"Analysis settled in {ms} ms"
+    return str(data)
+
+
+@mcp.tool()
 def get_binary_status() -> str:
     """
     Get the current status of the loaded binary.

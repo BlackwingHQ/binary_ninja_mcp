@@ -1,6 +1,7 @@
 import platform
 import re
 import subprocess
+import time
 import weakref
 from typing import Any
 
@@ -3668,6 +3669,56 @@ class BinaryOperations:
             "status": "ok",
             "address": hex(addr),
             "removed": prior_name,
+        }
+
+    def update_analysis_and_wait(self) -> dict[str, Any]:
+        """Force a full reanalysis of the current view and block until idle.
+
+        Intended for use after a batch of mutations (rename, retype,
+        define-data-var, declare-type, etc.) so the next query observes the
+        propagated state. May be slow on large binaries.
+
+        Returns:
+            Dict with status, wall-clock duration in ms, and a best-effort
+            snapshot of the BN analysis state afterwards.
+
+        Raises:
+            RuntimeError: If no binary is loaded or the BN call fails.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        update_call = getattr(bv, "update_analysis_and_wait", None)
+        if not callable(update_call):
+            raise RuntimeError(
+                "BinaryView.update_analysis_and_wait is unavailable in this BN version"
+            )
+
+        start = time.monotonic()
+        try:
+            update_call()
+        except Exception as e:
+            raise RuntimeError(f"update_analysis_and_wait failed: {e!s}")
+        duration_ms = int((time.monotonic() - start) * 1000)
+
+        info: dict[str, Any] = {}
+        try:
+            ai = getattr(bv, "analysis_info", None)
+            if ai is not None:
+                for k in ("state", "analysis_time", "active_info"):
+                    v = getattr(ai, k, None)
+                    if v is None:
+                        continue
+                    info[k] = (
+                        v if isinstance(v, (int, float, str, bool)) else str(v)
+                    )
+        except Exception:
+            info = {}
+
+        return {
+            "status": "ok",
+            "duration_ms": duration_ms,
+            "analysis_info": info or None,
         }
 
     def define_user_data_var(
