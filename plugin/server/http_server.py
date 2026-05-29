@@ -37,8 +37,14 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         try:
             self.send_response(status_code)
             self.send_header("Content-Type", content_type)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            # Encourage clients to close promptly; reduces BrokenPipe on abrupt disconnects
+            # No Access-Control-Allow-Origin: the supported bridges talk to
+            # this server via Python requests / Node axios, which don't enforce
+            # CORS, so they don't need the header. Omitting it stops a browser
+            # tab on an arbitrary site from reading responses out of the
+            # server while a binary is loaded. If a real browser-based MCP
+            # client ever ships, replace this with an explicit allowed origin
+            # (e.g. echo back the request's Origin only when it matches a
+            # value configured via a Binary Ninja setting) rather than `*`.
             self.send_header("Connection", "close")
             self.end_headers()
         except (BrokenPipeError, OSError):
