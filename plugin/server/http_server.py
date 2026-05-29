@@ -1923,6 +1923,35 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling addTag: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path == "/getFunctionMetadata":
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("address")
+                    or params.get("function")
+                    or params.get("functionName")
+                    or params.get("name")
+                )
+                if not fn_ident:
+                    self._send_json_response(
+                        {
+                            "error": "Missing function identifier",
+                            "help": "Provide function (or functionName/address). Returns is_thunk, can_return, has_variable_arguments, is_pure, analysis_skipped, analysis_skip_reason, analysis_skip_override, auto, parameter_count.",
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    result = self.binary_ops.get_function_metadata(fn_ident)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling getFunctionMetadata: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getVarUses" or path == "/getVarDefinitions":
                 fn_ident = (
                     params.get("functionAddress")

@@ -3671,6 +3671,81 @@ class BinaryOperations:
             "removed": prior_name,
         }
 
+    # ---------------- Function metadata ----------------
+    def get_function_metadata(
+        self, function_ident: str | int
+    ) -> dict[str, Any]:
+        """Return a read-only bundle of diagnostic flags for a function.
+
+        Useful when ``/decompile`` returns sparse or weird output and the
+        agent wants to know *why* — e.g. the function is a thunk, BN
+        skipped analysis, or it's variadic with no known prototype.
+
+        Args:
+            function_ident: Function name or address.
+
+        Returns:
+            Dict with the function name, start address, and BN's flags:
+            ``is_thunk``, ``can_return``, ``has_variable_arguments``,
+            ``is_pure``, ``analysis_skipped``, ``analysis_skip_reason``,
+            ``analysis_skip_override``, ``auto``, and ``parameter_count``.
+            Values that aren't exposed by the running BN version come back
+            as ``None``.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function can't be found.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        func = self.get_function_by_name_or_address(function_ident)
+        if func is None:
+            raise ValueError(f"Function not found: {function_ident!r}")
+
+        def _read_bool(name: str) -> bool | None:
+            try:
+                v = getattr(func, name, None)
+                return bool(v) if v is not None else None
+            except Exception:
+                return None
+
+        def _read_str(name: str) -> str | None:
+            try:
+                v = getattr(func, name, None)
+                if v is None:
+                    return None
+                # Many BN enums stringify cleanly; ints just become "0", "1", ...
+                return str(v)
+            except Exception:
+                return None
+
+        parameter_count: int | None = None
+        try:
+            params = getattr(func, "parameter_vars", None)
+            if params is not None:
+                # parameter_vars may be a ParameterVariables wrapper that's
+                # iterable rather than directly len()-able.
+                try:
+                    parameter_count = len(params)
+                except TypeError:
+                    parameter_count = sum(1 for _ in params)
+        except Exception:
+            parameter_count = None
+
+        return {
+            "function": getattr(func, "name", None),
+            "address": hex(int(getattr(func, "start", 0))),
+            "is_thunk": _read_bool("is_thunk"),
+            "can_return": _read_bool("can_return"),
+            "has_variable_arguments": _read_bool("has_variable_arguments"),
+            "is_pure": _read_bool("is_pure"),
+            "analysis_skipped": _read_bool("analysis_skipped"),
+            "analysis_skip_reason": _read_str("analysis_skip_reason"),
+            "analysis_skip_override": _read_str("analysis_skip_override"),
+            "auto": _read_bool("auto"),
+            "parameter_count": parameter_count,
+        }
+
     # ---------------- Variable data flow ----------------
     def _serialize_var_refs(
         self,

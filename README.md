@@ -196,6 +196,7 @@ The following table lists the available MCP functions for use:
 | `create_tag_type(name, icon)`                                        | Create a tag-type category. No-op if one with that name already exists.                                       |
 | `add_tag(address, tag_type, data, kind)`                             | Tag an address. `kind` is `auto` (default) / `address` / `function` / `data`. `tag_type` is auto-created if missing. |
 | `get_tags_at(address)`                                               | Return all tags at an address (data, in-function address, and containing function's tags).                    |
+| `get_function_metadata(function)`                                    | Read-only bundle of `is_thunk`, `can_return`, `has_variable_arguments`, `is_pure`, `analysis_skipped`, `analysis_skip_reason`, `analysis_skip_override`, `auto`, `parameter_count`. Use to diagnose poor decompilation. |
 | `get_var_uses(function, variable, il_level)`                         | Find every use site of a local variable inside a function. `il_level` filters to `all`/`hlil`/`mlil`/`llil`. |
 | `get_var_definitions(function, variable, il_level)`                  | Find every definition (write) site of a local variable inside a function.                                     |
 | `search_types(query, offset, count)`                                 | Search local Types by substring (name/decl).                                                                 |
@@ -242,6 +243,7 @@ These are the list of HTTP endpoints that can be called:
 - `/createTagType?name=<name>&icon=<glyph>`: Create a tag-type category (no-op if it already exists).
 - `/addTag?address=<addr>&tagType=<name>&data=<text>&kind=<auto|address|function|data>`: Attach a tag. `kind` defaults to `auto` (function-tag at a function start, address-tag inside a function, data-tag otherwise). `tagType` is auto-created if missing.
 - `/getTagsAt?address=<addr>`: Return data-, address-, and function-tags at the given address.
+- `/getFunctionMetadata?function=<name|addr>`: Return a read-only bundle of BN function flags (`is_thunk`, `can_return`, `has_variable_arguments`, `is_pure`, `analysis_skipped`, `analysis_skip_reason`, `analysis_skip_override`, `auto`, `parameter_count`).
 - `/getVarUses?function=<name|addr>&variable=<name>&ilLevel=<all|hlil|mlil|llil>`: List use sites of a local variable inside a function. Each entry includes the address, BN's il_type, and the HLIL snippet when available.
 - `/getVarDefinitions?function=<name|addr>&variable=<name>&ilLevel=<all|hlil|mlil|llil>`: Same shape as `/getVarUses` but for definition (write) sites.
 - `/patch` or `/patchBytes?address=<addr>&data=<hex>&save_to_file=<bool>`: Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Address: hex (e.g., "0x401000") or decimal. Data: hex string (e.g., "90 90"). `save_to_file` (default True) saves to disk and re-signs on macOS.

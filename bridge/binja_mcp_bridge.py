@@ -1056,6 +1056,59 @@ def _format_var_ref(ref: dict) -> str:
 
 
 @mcp.tool()
+def get_function_metadata(function: str) -> list:
+    """
+    Return diagnostic flags for a function: a quick read of why
+    decompilation might look sparse or weird before retrying.
+
+    Bundles BN's `Function.is_thunk`, `can_return`,
+    `has_variable_arguments`, `is_pure`, `analysis_skipped`,
+    `analysis_skip_reason`, `analysis_skip_override`, `auto`, plus the
+    parameter count.
+
+    Args:
+        function: Function name or address (hex like "0x401000" or decimal).
+
+    Returns:
+        List of "<field>: <value>" lines, or an error message.
+    """
+    if not function:
+        return ["Error: function is required"]
+    data = get_json("getFunctionMetadata", {"function": function})
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    keys = (
+        "function",
+        "address",
+        "is_thunk",
+        "can_return",
+        "has_variable_arguments",
+        "is_pure",
+        "analysis_skipped",
+        "analysis_skip_reason",
+        "analysis_skip_override",
+        "auto",
+        "parameter_count",
+    )
+    width = max(len(k) for k in keys)
+    out: list = []
+    for k in keys:
+        v = data.get(k)
+        if isinstance(v, bool):
+            v_str = "true" if v else "false"
+        elif v is None:
+            v_str = "-"
+        else:
+            v_str = str(v)
+        out.append(f"{k.ljust(width)} : {v_str}")
+    return out
+
+
+@mcp.tool()
 def get_var_uses(function: str, variable: str, il_level: str = "all") -> list:
     """
     Find every use site of a local variable inside a function.
