@@ -769,16 +769,11 @@ bn.PluginCommand.register(
 
 bn.log_info("Binary Ninja MCP plugin loaded successfully")
 
-# Auto-start and settings UI removed
-
-# One-time MCP client auto-setup: install bridge entry into popular MCP clients
-try:
-    from .utils.auto_setup import install_mcp_clients
-
-    _ = install_mcp_clients(quiet=True)
-except Exception:
-    # Best-effort; ignore failures to avoid disrupting plugin load
-    pass
+# Auto-start and settings UI removed.
+#
+# MCP client config files are not modified on plugin load. To register the
+# bridge with a specific MCP client, run scripts/setup_plugin.py (once) and
+# then scripts/install_mcp_client.py --client <Name> explicitly.
 
 # Register global handler to discover and track all opened BinaryViews
 try:

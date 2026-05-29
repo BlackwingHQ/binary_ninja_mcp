@@ -60,17 +60,24 @@ You may install the extension through Binary Ninja's Plugin Manager (`Plugins > 
 
 To manually install the extension, this repository can be copied into the [Binary Ninja plugins folder](https://docs.binary.ninja/guide/plugins.html).
 
-### [Optional] Manual Setup of the MCP Client
+### Setup
 
-*You do NOT need to set this up manually if you use a supported MCP client and follow the installation steps before.*
-
-You can also manage MCP client entries from the command line:
+Setup is a two-step process: prepare the plugin's local environment once per system, then register the bridge with each MCP client you want to use it from.
 
 ```bash
-python scripts/mcp_client_installer.py --install    # auto setup supported MCP clients
-python scripts/mcp_client_installer.py --uninstall  # remove entries and delete `.mcp_auto_setup_done`
-python scripts/mcp_client_installer.py --config     # print a generic JSON config snippet
+# One-time per system: create .venv and install bridge dependencies.
+python scripts/setup_plugin.py
+
+# Per MCP client: register the bridge in that client's config file.
+python scripts/install_mcp_client.py --list-clients          # show what we know about
+python scripts/install_mcp_client.py --client "Claude Code"  # install into one client
+python scripts/install_mcp_client.py --client Cursor --uninstall
+
+# For unsupported clients, point at any JSON config file directly:
+python scripts/install_mcp_client.py --config-file ~/some/mcp.json
 ```
+
+`install_mcp_client.py` writes to exactly one file per invocation and refuses to run if `setup_plugin.py` hasn't been run yet.
 
 #### Using npm package (Recommended)
 
