@@ -10,6 +10,7 @@ from binaryninja.settings import Settings
 from ..api.endpoints import BinaryNinjaEndpoints
 from ..core.binary_operations import BinaryOperations
 from ..core.config import Config
+from ..utils.approval import require_approval
 from ..utils.number_utils import convert_number as util_convert_number
 from ..utils.string_utils import parse_int_or_default
 
@@ -235,6 +236,44 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             self._send_json_response({"error": "No binary loaded"}, 400)
             return False
         return True
+
+    def _approve_patch(self, address, data, save_to_file) -> bool:
+        bv_filename = None
+        try:
+            bv_filename = self.binary_ops.current_view.file.filename
+        except Exception:
+            pass
+        nbytes: int | None = None
+        try:
+            if isinstance(data, list):
+                nbytes = len(data)
+            elif isinstance(data, bytes):
+                nbytes = len(data)
+            elif isinstance(data, str):
+                s = data.strip()
+                if s.startswith("0x") or s.startswith("0X"):
+                    s = s[2:]
+                s = s.replace(" ", "").replace("\n", "").replace("\t", "")
+                if s and all(c in "0123456789abcdefABCDEF" for c in s) and len(s) % 2 == 0:
+                    nbytes = len(s) // 2
+        except Exception:
+            pass
+        details = (
+            f"Address: {address}\n"
+            f"Bytes: {nbytes if nbytes is not None else '?'}\n"
+            f"Save to disk: {'yes' if save_to_file else 'no'}"
+        )
+        if require_approval("patch", bv_filename, details):
+            return True
+        self._send_json_response({"error": "User denied patch approval"}, 403)
+        return False
+
+    def _approve_load(self, filepath) -> bool:
+        details = f"Load binary into Binary Ninja: {filepath}"
+        if require_approval("load", filepath, details):
+            return True
+        self._send_json_response({"error": "User denied load approval"}, 403)
+        return False
 
     def do_GET(self):
         try:
@@ -1838,6 +1877,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                             # Not JSON, treat as hex string
                             pass
 
+                    if not self._approve_patch(address, data, save_to_file):
+                        return
                     result = self.endpoints.patch_bytes(address, data, save_to_file)
                     self._send_json_response(result)
                 except ValueError as ve:
@@ -1916,6 +1957,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     self._send_json_response({"error": "Missing filepath parameter"}, 400)
                     return
 
+                if not self._approve_load(filepath):
+                    return
                 try:
                     self.binary_ops.load_binary(filepath)
                     self._send_json_response(
@@ -2325,6 +2368,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                             # Not JSON, treat as hex string
                             pass
 
+                    if not self._approve_patch(address, data, save_to_file):
+                        return
                     result = self.endpoints.patch_bytes(address, data, save_to_file)
                     self._send_json_response(result)
                 except ValueError as ve:

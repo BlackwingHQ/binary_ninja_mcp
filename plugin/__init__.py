@@ -121,6 +121,14 @@ def _register_settings():
         "mcp.port",
         '{"title": "Server Port", "type": "string", "default": "9009", "description": "Port number for the MCP server."}',
     )
+    settings.register_setting(
+        "mcp.patchAllowList",
+        '{ "title": "Patch Allow List", "type": "array", "elementType": "string", "default": [], "description": "Absolute file paths whose binaries may be patched without prompting. Paths are matched after realpath normalization. Anything not listed will trigger an approval prompt (or deny in headless mode)." }',
+    )
+    settings.register_setting(
+        "mcp.loadAllowList",
+        '{ "title": "Load Allow List", "type": "array", "elementType": "string", "default": [], "description": "Absolute file paths that may be loaded via /load without prompting. Paths are matched after realpath normalization. Anything not listed will trigger an approval prompt (or deny in headless mode)." }',
+    )
 
 
 _register_settings()
