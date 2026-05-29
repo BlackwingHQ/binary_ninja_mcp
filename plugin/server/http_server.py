@@ -1578,6 +1578,34 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling undefineUserSymbol: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path == "/undefineUserType":
+                type_name = (
+                    params.get("name")
+                    or params.get("type")
+                    or params.get("typeName")
+                )
+                if not type_name:
+                    self._send_json_response(
+                        {
+                            "error": "Missing type name parameter",
+                            "help": "Required: name (or type/typeName) — the user-defined type to remove.",
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    result = self.binary_ops.undefine_user_type(type_name)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    # "not found" and "BN refused" both come back as ValueError;
+                    # 404 is the more useful signal for an agent.
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling undefineUserType: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
             elif path == "/platforms":
                 try:
                     self._send_json_response(self.endpoints.list_platforms())

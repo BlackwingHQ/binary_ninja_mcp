@@ -3670,6 +3670,75 @@ class BinaryOperations:
             "removed": prior_name,
         }
 
+    def undefine_user_type(self, name: str) -> dict[str, Any]:
+        """Remove a user-defined type by name.
+
+        Args:
+            name: The type name as it appears in /localTypes or
+                /getUserDefinedType. Whitespace is stripped.
+
+        Returns:
+            Dict with status, name, and a string snapshot of the prior
+            declaration when one was available.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the name is empty, no user type by that name
+                exists, or BN refuses to remove it.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise ValueError("Empty type name")
+        bv = self._current_view
+
+        # Verify the type is a user type (auto/library types must not be removable
+        # via this endpoint) and capture its declaration for the response.
+        prior_decl: str | None = None
+        found = False
+        try:
+            container = getattr(bv, "user_type_container", None)
+            types_attr = (
+                getattr(container, "types", None) if container is not None else None
+            )
+            if types_attr:
+                for type_id in list(types_attr.keys()):
+                    entry = types_attr[type_id]
+                    try:
+                        entry_name = entry[0]
+                        type_obj = entry[1]
+                    except (TypeError, IndexError):
+                        entry_name = getattr(entry, "name", None)
+                        type_obj = getattr(entry, "type", None)
+                    if entry_name == clean_name:
+                        found = True
+                        if type_obj is not None:
+                            try:
+                                prior_decl = str(getattr(type_obj, "type", type_obj))
+                            except Exception:
+                                prior_decl = None
+                        break
+        except Exception:
+            # If introspection fails for any reason, refuse rather than guess.
+            found = False
+
+        if not found:
+            raise ValueError(
+                f"Type {clean_name!r} is not defined as a user type"
+            )
+
+        try:
+            bv.undefine_user_type(clean_name)
+        except Exception as e:
+            raise ValueError(f"Failed to undefine type {clean_name!r}: {e!s}")
+
+        return {
+            "status": "ok",
+            "name": clean_name,
+            "removed_declaration": prior_decl,
+        }
+
     def find_bytes(
         self,
         pattern: bytes,

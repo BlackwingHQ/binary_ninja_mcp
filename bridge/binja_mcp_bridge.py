@@ -811,6 +811,35 @@ def get_user_defined_type(type_name: str) -> str:
 
 
 @mcp.tool()
+def undefine_user_type(name: str) -> str:
+    """
+    Remove a user-defined type by name.
+
+    Args:
+        name: Type name as it appears in `list_local_types` /
+            `get_user_defined_type`. Auto-generated and library types are
+            rejected (only user types can be removed via this tool).
+
+    Returns:
+        Status string describing the removal, or an error. The server
+        returns 404 if the name does not name a user-defined type.
+    """
+    if not name:
+        return "Error: type name is required"
+    data = get_json("undefineUserType", {"name": name})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        prior = data.get("removed_declaration")
+        if prior:
+            return f"Removed user type {data.get('name')!r} (was: {prior})"
+        return f"Removed user type {data.get('name')!r}"
+    return str(data)
+
+
+@mcp.tool()
 def get_xrefs_to(address: str) -> list:
     """
     Get all cross references (code and data) to the given address.
