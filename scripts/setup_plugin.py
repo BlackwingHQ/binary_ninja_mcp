@@ -89,7 +89,11 @@ def run(force: bool = False, regen_token: bool = False, quiet: bool = False) -> 
     _say(quiet, "  python scripts/install_mcp_client.py --list-clients")
     _say(quiet, "  python scripts/install_mcp_client.py --client <Name>")
     _say(quiet, "")
-    _say(quiet, "Or paste this snippet into an unsupported client's config:")
+    _say(quiet, "To register only for a single project (or an unsupported client),")
+    _say(quiet, "point --config-file at the project's MCP config file, e.g.:")
+    _say(quiet, "  python scripts/install_mcp_client.py --config-file <project>/.mcp.json")
+    _say(quiet, "")
+    _say(quiet, "Or paste this snippet into the config by hand:")
     snippet = {
         "mcpServers": {
             MCP_SERVER_KEY: make_server_entry(py, bridge, collect_python_env()),
