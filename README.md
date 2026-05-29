@@ -28,27 +28,27 @@ This repository contains two separate components:
 
 - [Binary Ninja](https://binary.ninja/)
 - Python 3.12+
-- MCP client (those with auto-setup support are listed below)
+- MCP client (see the supported list below)
 
 ## Installation
 
 ### MCP Client
 
-Please install the MCP client before you install Binary Ninja MCP so that the MCP clients can be auto-setup. We currently support auto-setup for these MCP clients:
+`scripts/install_mcp_client.py --client <name>` writes the bridge entry directly into the standard config file of these clients:
 
-    1. Cline (recommended)
-    2. Roo Code
-    3. Claude Desktop (recommended)
-    4. Cursor
-    5. Windsurf
-    6. Claude Code
-    7. LM Studio
+- Cline
+- Roo Code
+- Claude Desktop
+- Cursor
+- Windsurf
+- Claude Code
+- LM Studio
+
+Any other MCP-protocol client can be wired up by hand with `--config-file <path>`.
 
 ### Extension Installation
 
-After the MCP client is installed, you can install the MCP server using the Binary Ninja Plugin Manager or manually. Both methods support auto-setup of MCP clients.
-
-If your MCP client is not set, you should install it first then try to reinstall the extension.
+Install the plugin via the Binary Ninja Plugin Manager or by copying this repository into your plugins folder. Either way, you'll then run the setup scripts described below to register the bridge with your MCP client.
 
 #### Binary Ninja Plugin Manager
 
@@ -77,60 +77,7 @@ python scripts/install_mcp_client.py --client Cursor --uninstall
 python scripts/install_mcp_client.py --config-file ~/some/mcp.json
 ```
 
-`install_mcp_client.py` writes to exactly one file per invocation and refuses to run if `setup_plugin.py` hasn't been run yet.
-
-#### Using npm package (Recommended)
-
-The recommended way to set up the MCP client is using the official npm package:
-
-```bash
-npx -y binary-ninja-mcp
-```
-
-For MCP clients, use this configuration:
-
-```json
-{
-  "mcpServers": {
-    "binary-ninja-mcp": {
-      "command": "npx",
-      "args": ["-y", "binary-ninja-mcp", "--host", "localhost", "--port", "9009"]
-    }
-  }
-}
-```
-
-Or if installed globally:
-
-```json
-{
-  "mcpServers": {
-    "binary-ninja-mcp": {
-      "command": "binary-ninja-mcp",
-      "args": ["--host", "localhost", "--port", "9009"]
-    }
-  }
-}
-```
-
-#### Using Python Bridge (Legacy)
-
-For other MCP clients, use the Python bridge directly:
-
-```json
-{
-    "mcpServers": {
-        "binary_ninja_mcp": {
-            "command": "/ABSOLUTE/PATH/TO/Binary Ninja/plugins/repositories/community/plugins/fosdickio_binary_ninja_mcp/.venv/bin/python",
-            "args": [
-                "/ABSOLUTE/PATH/TO/Binary Ninja/plugins/repositories/community/plugins/fosdickio_binary_ninja_mcp/bridge/binja_mcp_bridge.py"
-            ]
-        }
-    }
-}
-```
-
-Note: Replace `/ABSOLUTE/PATH/TO` with the actual absolute path to your project directory. The virtual environment's Python interpreter must be used to access the installed dependencies.
+`install_mcp_client.py` writes to exactly one file per invocation and refuses to run if `setup_plugin.py` hasn't been run yet. For an unsupported client, `setup_plugin.py` prints a ready-to-paste JSON snippet on completion that you can drop into the client's config by hand.
 
 ## Usage
 
