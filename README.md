@@ -58,7 +58,19 @@ You may install the extension through Binary Ninja's Plugin Manager (`Plugins > 
 
 #### Manual Install
 
-To manually install the extension, this repository can be copied into the [Binary Ninja plugins folder](https://docs.binary.ninja/guide/plugins.html).
+Copy or symlink this repository into Binary Ninja's [plugins folder](https://docs.binary.ninja/guide/plugins.html):
+
+- **macOS:** `~/Library/Application Support/Binary Ninja/plugins/`
+- **Linux:** `~/.binaryninja/plugins/`
+- **Windows:** `%APPDATA%\Binary Ninja\plugins\`
+
+For development, a symlink is usually best so edits land without copying:
+
+```bash
+ln -s /path/to/this/repo ~/.binaryninja/plugins/binary_ninja_mcp
+```
+
+In Binary Ninja, **Plugins → Open Plugin Folder** takes you to the right directory. `setup_plugin.py` also prints the platform-appropriate path when it runs.
 
 ### Setup
 

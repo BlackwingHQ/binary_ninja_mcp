@@ -27,10 +27,12 @@ if _UTILS not in sys.path:
 from auth import ensure_token, mint_token, token_file_path  # noqa: E402
 from installer import (  # noqa: E402
     MCP_SERVER_KEY,
+    bn_plugins_folder,
     bridge_entrypoint,
     collect_python_env,
     ensure_venv,
     make_server_entry,
+    plugin_root,
     requirements_file,
     venv_dir,
     venv_exists,
@@ -84,6 +86,21 @@ def run(force: bool = False, regen_token: bool = False, quiet: bool = False) -> 
     _say(quiet, f"  venv python : {py}")
     _say(quiet, f"  bridge      : {bridge}")
     _say(quiet, f"  auth token  : {token_file_path()}")
+    _say(quiet, "")
+    bn_plugins = bn_plugins_folder()
+    if bn_plugins:
+        link_target = os.path.join(bn_plugins, "binary_ninja_mcp")
+        _say(quiet, "If you haven't already, install this plugin into Binary Ninja's")
+        _say(quiet, f"plugins folder ({bn_plugins}). For development, symlink:")
+        _say(quiet, f"  mkdir -p {bn_plugins!s}")
+        _say(quiet, f"  ln -s {plugin_root()} {link_target}")
+        _say(quiet, "(In BN: Plugins -> Open Plugin Folder opens the same directory.)")
+    else:
+        _say(
+            quiet,
+            "Install this plugin into Binary Ninja's plugins folder for your platform "
+            "(see https://docs.binary.ninja/guide/plugins.html).",
+        )
     _say(quiet, "")
     _say(quiet, "To register the bridge with a specific MCP client:")
     _say(quiet, "  python scripts/install_mcp_client.py --list-clients")

@@ -63,6 +63,25 @@ def venv_exists() -> bool:
     return os.path.exists(venv_python())
 
 
+def bn_plugins_folder() -> str | None:
+    """Return the user's Binary Ninja plugins folder for this platform.
+
+    Returns None on platforms we don't recognize so callers can fall back
+    to a generic hint that points at the BN docs.
+    """
+    home = os.path.expanduser("~")
+    if sys.platform == "darwin":
+        return os.path.join(
+            home, "Library", "Application Support", "Binary Ninja", "plugins"
+        )
+    if sys.platform == "linux":
+        return os.path.join(home, ".binaryninja", "plugins")
+    if sys.platform == "win32":
+        appdata = os.getenv("APPDATA") or os.path.join(home, "AppData", "Roaming")
+        return os.path.join(appdata, "Binary Ninja", "plugins")
+    return None
+
+
 def ensure_venv() -> str:
     """Create the local venv if needed and return the path to its python.
 
