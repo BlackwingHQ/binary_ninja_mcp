@@ -1059,6 +1059,52 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     }
                 )
 
+            elif path == "/parseExpression":
+                expr = (
+                    params.get("expr")
+                    or params.get("expression")
+                    or params.get("e")
+                )
+                here_str = params.get("here") or params.get("at")
+                if not expr:
+                    self._send_json_response(
+                        {
+                            "error": "Missing expression",
+                            "help": (
+                                "Use ?expr=<expression>. Optional: here=<address> "
+                                "(hex or decimal) substituted for $here in the expression."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                here_val = 0
+                if here_str:
+                    try:
+                        s = here_str.strip()
+                        if s.startswith("0x") or s.startswith("0X"):
+                            here_val = int(s, 16)
+                        elif any(c in "abcdefABCDEF" for c in s):
+                            here_val = int(s, 16)
+                        else:
+                            here_val = int(s, 10)
+                    except ValueError:
+                        self._send_json_response(
+                            {"error": "Invalid 'here' address format"}, 400
+                        )
+                        return
+                try:
+                    result = self.binary_ops.parse_expression(expr, here_val)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling parseExpression: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getCallers":
                 identifiers = self._extract_identifiers(params)
                 if not identifiers:

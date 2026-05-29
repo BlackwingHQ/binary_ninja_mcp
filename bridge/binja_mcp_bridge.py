@@ -701,6 +701,38 @@ def find_text(
 
 
 @mcp.tool()
+def parse_expression(expr: str, here: str = "0") -> str:
+    """
+    Evaluate a Binary Ninja expression to an address.
+
+    BN's expression language accepts symbol names, arithmetic (`+`, `-`,
+    `*`, `/`), hex (`0x...`) / decimal literals, and the `$here`
+    placeholder. Use this whenever you'd otherwise compute an address by
+    hand — `parse_expression("main+0x40")` returns the same string you'd
+    pass to `decompile_function`, `find_bytes`, `add_tag`, etc.
+
+    Args:
+        expr: Expression to evaluate (e.g. `"main+0x40"`, `"sub_401000+8"`,
+            `"&strtab"`).
+        here: Optional address substituted for `$here`. Hex or decimal.
+            Default `"0"`.
+
+    Returns:
+        Resolved hex address, or an error message.
+    """
+    if not expr:
+        return "Error: expr is required"
+    data = get_json("parseExpression", {"expr": expr, "here": here})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return data.get("address") or "Error: missing address"
+    return str(data)
+
+
+@mcp.tool()
 def find_constant(
     value: str,
     start: str | None = None,

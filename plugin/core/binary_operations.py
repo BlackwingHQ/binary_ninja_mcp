@@ -4653,6 +4653,84 @@ class BinaryOperations:
             )
         return self._scan(find_next, int(value), start, end, limit, advance=1)
 
+    def parse_expression(
+        self, expr: str, here: int = 0
+    ) -> dict[str, Any]:
+        """Evaluate a Binary Ninja expression string to an address.
+
+        BN's expression language accepts symbol names, arithmetic
+        (``+``, ``-``, ``*``, ``/``), hex (``0x...``) and decimal literals,
+        and the ``$here`` placeholder. This lets the agent pass strings
+        like ``main+0x40`` or ``sub_401000+8`` to any tool that takes an
+        address, without computing the result first.
+
+        Args:
+            expr: Expression to evaluate.
+            here: Address substituted for ``$here``. Default 0.
+
+        Returns:
+            Dict with status, the echoed expression and ``here`` value,
+            and the resolved address as both hex and integer.
+
+        Raises:
+            RuntimeError: If no binary is loaded or BN doesn't expose
+                ``parse_expression``.
+            ValueError: If the expression doesn't parse.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_expr = (expr or "").strip()
+        if not clean_expr:
+            raise ValueError("Empty expression")
+        bv = self._current_view
+
+        parse = getattr(bv, "parse_expression", None)
+        if not callable(parse):
+            raise RuntimeError(
+                "BinaryView.parse_expression is unavailable in this Binary Ninja version"
+            )
+
+        here_int = int(here or 0)
+        try:
+            try:
+                raw = parse(clean_expr, here_int)
+            except TypeError:
+                # Some BN versions accept only the expression argument.
+                raw = parse(clean_expr)
+        except Exception as e:
+            raise ValueError(
+                f"Failed to parse expression {clean_expr!r}: {e!s}"
+            )
+
+        # BN occasionally returned ``Tuple[int, str]`` in older releases;
+        # the str part carries an error message when parsing fails.
+        addr_val: int | None = None
+        if isinstance(raw, tuple):
+            if len(raw) >= 2 and raw[1]:
+                raise ValueError(f"Expression error: {raw[1]!s}")
+            if len(raw) >= 1 and raw[0] is not None:
+                addr_val = int(raw[0])
+        elif raw is not None:
+            try:
+                addr_val = int(raw)
+            except Exception as e:
+                raise ValueError(
+                    f"Unexpected parse_expression result {raw!r}: {e!s}"
+                )
+
+        if addr_val is None:
+            raise ValueError(
+                f"Expression {clean_expr!r} did not produce an address"
+            )
+
+        return {
+            "status": "ok",
+            "expression": clean_expr,
+            "here": hex(here_int),
+            "address": hex(addr_val),
+            "value": addr_val,
+        }
+
     def find_bytes(
         self,
         pattern: bytes,
