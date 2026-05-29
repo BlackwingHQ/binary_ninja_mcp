@@ -34,17 +34,13 @@ def safe_get(endpoint: str, params: dict | None = None, timeout: float | None = 
     """
     if params is None:
         params = {}
-    qs = [f"{k}={v}" for k, v in params.items()]
-    query_string = "&".join(qs)
     url = f"{binja_server_url}/{endpoint}"
-    if query_string:
-        url += "?" + query_string
 
     try:
         if timeout is None:
-            response = requests.get(url)
+            response = requests.get(url, params=params)
         else:
-            response = requests.get(url, timeout=timeout)
+            response = requests.get(url, params=params, timeout=timeout)
         response.encoding = "utf-8"
         if response.ok:
             return response.text.splitlines()
@@ -63,16 +59,12 @@ def get_json(endpoint: str, params: dict | None = None, timeout: float | None = 
     """
     if params is None:
         params = {}
-    qs = [f"{k}={v}" for k, v in params.items()]
-    query_string = "&".join(qs)
     url = f"{binja_server_url}/{endpoint}"
-    if query_string:
-        url += "?" + query_string
     try:
         if timeout is None:
-            response = requests.get(url)
+            response = requests.get(url, params=params)
         else:
-            response = requests.get(url, timeout=timeout)
+            response = requests.get(url, params=params, timeout=timeout)
         response.encoding = "utf-8"
         # Try to parse JSON regardless of status
         try:
@@ -98,16 +90,12 @@ def get_text(endpoint: str, params: dict | None = None, timeout: float | None = 
     """Perform a GET and return raw text (or an error string)."""
     if params is None:
         params = {}
-    qs = [f"{k}={v}" for k, v in params.items()]
-    query_string = "&".join(qs)
     url = f"{binja_server_url}/{endpoint}"
-    if query_string:
-        url += "?" + query_string
     try:
         if timeout is None:
-            response = requests.get(url)
+            response = requests.get(url, params=params)
         else:
-            response = requests.get(url, timeout=timeout)
+            response = requests.get(url, params=params, timeout=timeout)
         response.encoding = "utf-8"
         if response.ok:
             return response.text
