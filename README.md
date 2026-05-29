@@ -183,6 +183,7 @@ The following table lists the available MCP functions for use:
 | `set_local_variable_type(function_address, variable_name, new_type)` | Set a local variable's type.                                                                                 |
 | `retype_variable`                                                    | Retype variable inside a given function.                                                                     |
 | `search_functions_by_name`                                           | Search for functions whose name contains the given substring.                                                |
+| `find_bytes(pattern, start, end, limit)`                             | Find non-overlapping occurrences of a byte pattern. Pattern is hex (e.g. `"deadbeef"` or `"90 90 90"`). `start`/`end` are optional address bounds; `limit` caps results (0 = unlimited). |
 | `search_types(query, offset, count)`                                 | Search local Types by substring (name/decl).                                                                 |
 | `set_comment`                                                        | Set a comment at a specific address.                                                                         |
 | `set_function_comment`                                               | Set a comment for a function.                                                                                |
@@ -214,6 +215,7 @@ These are the list of HTTP endpoints that can be called:
 - `/strings?offset=<n>&limit=<m>`: Paginated strings.
 - `/strings/filter?offset=<n>&limit=<m>&filter=<substr>`: Filtered strings.
 - `/searchTypes?query=<substr>&offset=<n>&limit=<m>`: Search local types by substring.
+- `/findBytes?pattern=<hex>&start=<addr>&end=<addr>&limit=<n>`: Find non-overlapping byte-pattern occurrences across the binary. Pattern tolerates spaces and `0x` prefixes (e.g. `deadbeef`, `de ad be ef`, `0xde 0xad`). `start`/`end` are optional address bounds; `limit` defaults to 100 (0 or negative = unlimited).
 - `/patch` or `/patchBytes?address=<addr>&data=<hex>&save_to_file=<bool>`: Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Address: hex (e.g., "0x401000") or decimal. Data: hex string (e.g., "90 90"). `save_to_file` (default True) saves to disk and re-signs on macOS.
 - `/renameVariables`: Batch rename locals in a function. Parameters:
   - Function: one of `functionAddress`, `address`, `function`, `functionName`, or `name`.

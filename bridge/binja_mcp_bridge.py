@@ -611,6 +611,46 @@ def search_functions_by_name(query: str, offset: int = 0, limit: int = 100) -> l
 
 
 @mcp.tool()
+def find_bytes(
+    pattern: str,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int = 100,
+) -> list:
+    """
+    Find non-overlapping occurrences of a byte pattern in the current binary.
+
+    Args:
+        pattern: Hex string for the bytes to find. Spaces and 0x prefixes are
+            tolerated, e.g. "deadbeef", "de ad be ef", "0xde 0xad 0xbe 0xef".
+        start: Optional starting address (hex like "0x401000" or decimal).
+            Defaults to the binary view's start.
+        end: Optional ending address (exclusive). Defaults to view end.
+        limit: Cap on results (default 100). 0 or negative means unlimited.
+
+    Returns:
+        List of "<address>\\t<function|->" lines, one per match, or an error /
+        "(no matches)" sentinel.
+    """
+    if not pattern:
+        return ["Error: pattern is required"]
+    params: dict = {"pattern": pattern, "limit": limit}
+    if start is not None:
+        params["start"] = start
+    if end is not None:
+        params["end"] = end
+    data = get_json("findBytes", params)
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    matches = data.get("matches", []) if isinstance(data, dict) else []
+    if not matches:
+        return ["(no matches)"]
+    return [f"{m.get('address')}\t{m.get('function') or '-'}" for m in matches]
+
+
+@mcp.tool()
 def get_binary_status() -> str:
     """
     Get the current status of the loaded binary.

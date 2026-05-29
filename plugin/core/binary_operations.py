@@ -3573,6 +3573,79 @@ class BinaryOperations:
 
         return out
 
+    def find_bytes(
+        self,
+        pattern: bytes,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Find non-overlapping occurrences of a byte pattern in the current view.
+
+        Iterates `BinaryView.find_next_data` so it works across BN versions that
+        expose that method, even when the newer `find_all_data` is unavailable.
+
+        Args:
+            pattern: Bytes to search for. Empty patterns are rejected.
+            start: Optional starting address (inclusive). Defaults to view start.
+            end: Optional ending address (exclusive). Defaults to view end.
+            limit: Cap on results. 0 or negative means "no cap".
+
+        Returns:
+            List of `{"address": "0x...", "function": <name|None>}` dicts.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        if not pattern:
+            raise ValueError("Empty pattern")
+        bv = self._current_view
+        find_next = getattr(bv, "find_next_data", None)
+        if not callable(find_next):
+            raise RuntimeError(
+                "BinaryView.find_next_data is unavailable in this Binary Ninja version"
+            )
+
+        if start is None:
+            start = int(getattr(bv, "start", 0))
+        view_end_attr = getattr(bv, "end", None)
+        view_end = int(view_end_attr) if view_end_attr is not None else None
+        if end is None:
+            end = view_end
+        elif view_end is not None:
+            end = min(int(end), view_end)
+
+        matches: list[dict[str, Any]] = []
+        cur = int(start)
+        # Hard cap iterations to keep a pathological pattern from spinning forever.
+        max_iter = limit if limit > 0 else 1_000_000
+        for _ in range(max_iter):
+            if end is not None and cur >= end:
+                break
+            try:
+                hit = find_next(cur, pattern)
+            except Exception as e:
+                bn.log_warn(f"find_next_data raised at {hex(cur)}: {e}")
+                break
+            if hit is None:
+                break
+            addr = int(hit)
+            if end is not None and addr >= end:
+                break
+            fn_name = None
+            try:
+                getter = getattr(bv, "get_functions_containing", None)
+                fns = getter(addr) if callable(getter) else []
+                if fns:
+                    fn_name = getattr(fns[0], "name", None)
+            except Exception:
+                fn_name = None
+            matches.append({"address": hex(addr), "function": fn_name})
+            if limit > 0 and len(matches) >= limit:
+                break
+            # Advance past the match for non-overlapping search.
+            cur = addr + len(pattern)
+        return matches
+
     def patch_bytes(
         self, address: str | int, data: str | bytes | list[int], save_to_file: bool = True
     ) -> dict[str, Any]:

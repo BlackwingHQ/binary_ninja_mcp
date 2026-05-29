@@ -833,6 +833,86 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 matches = self.endpoints.search_functions(search_term, offset, limit)
                 self._send_json_response({"matches": matches})
 
+            elif path == "/findBytes":
+                pattern_str = (
+                    params.get("pattern")
+                    or params.get("bytes")
+                    or params.get("data")
+                )
+                if not pattern_str:
+                    self._send_json_response(
+                        {
+                            "error": "Missing pattern parameter",
+                            "help": (
+                                "Use ?pattern=<hex> (e.g. 'deadbeef' or '90 90 90' or "
+                                "'0xde 0xad'). Optional: start (hex/dec), end (hex/dec), "
+                                "limit (default 100; 0 or negative = unlimited)."
+                            ),
+                        },
+                        400,
+                    )
+                    return
+                # Same hex-parsing rules as /patch: tolerate 0x prefixes, spaces, commas.
+                normalized = pattern_str.strip()
+                if normalized.startswith("0x") or normalized.startswith("0X"):
+                    normalized = normalized[2:]
+                for sep in (" ", "\n", "\t", ",", "0x", "0X"):
+                    normalized = normalized.replace(sep, "")
+                try:
+                    pattern_bytes = bytes.fromhex(normalized)
+                except ValueError as ve:
+                    self._send_json_response(
+                        {"error": f"Invalid hex pattern: {ve}"}, 400
+                    )
+                    return
+
+                def _parse_addr(val: str | None) -> int | None:
+                    if val is None or val == "":
+                        return None
+                    v = val.strip()
+                    if v.startswith("0x") or v.startswith("0X"):
+                        return int(v, 16)
+                    if any(c in "abcdefABCDEF" for c in v):
+                        return int(v, 16)
+                    return int(v, 10)
+
+                try:
+                    start_addr = _parse_addr(params.get("start"))
+                    end_addr = _parse_addr(params.get("end"))
+                except ValueError as ve:
+                    self._send_json_response(
+                        {"error": f"Invalid address: {ve}"}, 400
+                    )
+                    return
+
+                find_limit = parse_int_or_default(params.get("limit"), 100)
+
+                try:
+                    matches = self.binary_ops.find_bytes(
+                        pattern_bytes,
+                        start=start_addr,
+                        end=end_addr,
+                        limit=find_limit,
+                    )
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                    return
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                    return
+                except Exception as e:
+                    bn.log_error(f"Error handling findBytes: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+                    return
+
+                self._send_json_response(
+                    {
+                        "pattern": pattern_bytes.hex(),
+                        "count": len(matches),
+                        "matches": matches,
+                    }
+                )
+
             elif path == "/getCallers":
                 identifiers = self._extract_identifiers(params)
                 if not identifiers:
