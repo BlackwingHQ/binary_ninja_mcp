@@ -799,6 +799,162 @@ def update_analysis() -> str:
 
 
 @mcp.tool()
+def list_tag_types() -> list:
+    """
+    List all tag types known to Binary Ninja for the current binary.
+
+    Includes BN built-ins (Important, Bug, Bookmark, ...) and any
+    user-created categories. Use this before `add_tag` if you want to know
+    what categories already exist; `create_tag_type` will set one up
+    on the fly otherwise.
+
+    Returns:
+        List of strings, one per tag type, formatted as "<icon>  <name>".
+    """
+    data = get_json("tagTypes")
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    types = data.get("tag_types", []) if isinstance(data, dict) else []
+    if not types:
+        return ["(no tag types defined)"]
+    return [f"{t.get('icon') or ' '}  {t.get('name')}" for t in types]
+
+
+@mcp.tool()
+def create_tag_type(name: str, icon: str = "🏷") -> str:
+    """
+    Create a tag type, or no-op if one with that name already exists.
+
+    Tag types are categories like "Crypto", "Syscall", "TODO", "Reviewed".
+    Use them to mark progress without polluting decompilation with
+    comments — comments are for *explaining* code, tags are for *marking*
+    locations.
+
+    Args:
+        name: Tag-type name (e.g. "Crypto").
+        icon: Short string used as BN's icon, typically a single emoji.
+            Defaults to a generic tag glyph.
+
+    Returns:
+        Status string indicating whether the type was created or already
+        existed.
+    """
+    if not name:
+        return "Error: name is required"
+    data = get_json("createTagType", {"name": name, "icon": icon})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        verb = "Created" if data.get("created") else "Already existed:"
+        return f"{verb} tag type {data.get('name')!r} (icon: {data.get('icon')})"
+    return str(data)
+
+
+@mcp.tool()
+def add_tag(
+    address: str,
+    tag_type: str,
+    data: str = "",
+    kind: str = "auto",
+) -> str:
+    """
+    Attach a tag to an address, function, or data location.
+
+    Tags are the right tool for marking progress and findings during RE
+    work — "checked this", "calls crypto here", "TODO: verify size". Use
+    them instead of comments when you want a *marker* the user can browse
+    in BN's tags pane, rather than a *note* embedded in the disassembly.
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+        tag_type: Tag-type name. Auto-created (with the default icon) if it
+            doesn't already exist.
+        data: Optional description / payload text.
+        kind: One of:
+            - "auto" (default): the server picks "function" if the address
+              is the start of a function, "address" if it's inside a
+              function body, "data" otherwise.
+            - "address": code-address tag (must be inside a function).
+            - "function": tags the whole function containing the address.
+            - "data": data-section tag.
+
+    Returns:
+        Status string with the chosen kind and the address tagged.
+    """
+    if not address or not tag_type:
+        return "Error: address and tag_type are required"
+    data_payload = data or ""
+    resp = get_json(
+        "addTag",
+        {
+            "address": address,
+            "tagType": tag_type,
+            "data": data_payload,
+            "kind": kind,
+        },
+    )
+    if not resp:
+        return "Error: no response"
+    if isinstance(resp, dict) and resp.get("error"):
+        return f"Error: {resp['error']}"
+    if isinstance(resp, dict) and resp.get("status") == "ok":
+        payload = resp.get("data") or ""
+        suffix = f": {payload}" if payload else ""
+        return (
+            f"Added {resp.get('kind')} tag {resp.get('tag_type')!r} "
+            f"at {resp.get('address')}{suffix}"
+        )
+    return str(resp)
+
+
+@mcp.tool()
+def get_tags_at(address: str) -> list:
+    """
+    List all tags at an address (data, in-function address, and the
+    containing function's tags).
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+
+    Returns:
+        List of human-readable strings, one per tag, or "(no tags)" /
+        an error message.
+    """
+    if not address:
+        return ["Error: address is required"]
+    resp = get_json("getTagsAt", {"address": address})
+    if not resp:
+        return ["Error: no response"]
+    if isinstance(resp, dict) and resp.get("error"):
+        return [f"Error: {resp['error']}"]
+    if not isinstance(resp, dict):
+        return [str(resp)]
+    if (resp.get("total") or 0) == 0:
+        return ["(no tags)"]
+    out: list = []
+    for tag in resp.get("data_tags", []) or []:
+        out.append(_format_tag(tag))
+    for tag in resp.get("address_tags", []) or []:
+        out.append(_format_tag(tag))
+    for tag in resp.get("function_tags", []) or []:
+        out.append(_format_tag(tag))
+    return out
+
+
+def _format_tag(tag: dict) -> str:
+    icon = tag.get("icon") or ""
+    kind = tag.get("kind") or "?"
+    name = tag.get("type") or "?"
+    data = tag.get("data") or ""
+    base = f"[{kind}] {icon}  {name}"
+    return f"{base}: {data}" if data else base
+
+
+@mcp.tool()
 def get_binary_status() -> str:
     """
     Get the current status of the loaded binary.

@@ -190,6 +190,10 @@ The following table lists the available MCP functions for use:
 | `define_user_data_var(address, type)`                                | Type a global at an address. `type` is C-style (e.g. `"uint8_t"`, `"struct Foo *"`). Propagates the type through every xref. |
 | `undefine_user_data_var(address)`                                    | Remove a user data variable at an address. Returns 404 if none exists.                                        |
 | `update_analysis()`                                                  | Force a full Binary Ninja reanalysis and block until idle. Use after batch mutations so later queries see propagated state. May be slow on large binaries. |
+| `list_tag_types()`                                                   | List all tag types known to BN (built-in plus user-created).                                                  |
+| `create_tag_type(name, icon)`                                        | Create a tag-type category. No-op if one with that name already exists.                                       |
+| `add_tag(address, tag_type, data, kind)`                             | Tag an address. `kind` is `auto` (default) / `address` / `function` / `data`. `tag_type` is auto-created if missing. |
+| `get_tags_at(address)`                                               | Return all tags at an address (data, in-function address, and containing function's tags).                    |
 | `search_types(query, offset, count)`                                 | Search local Types by substring (name/decl).                                                                 |
 | `set_comment`                                                        | Set a comment at a specific address.                                                                         |
 | `set_function_comment`                                               | Set a comment for a function.                                                                                |
@@ -228,6 +232,10 @@ These are the list of HTTP endpoints that can be called:
 - `/defineUserDataVar?address=<addr>&type=<cType>`: Type a global at an address. `type` is C-style (`uint8_t`, `struct Foo *`, `char[16]`).
 - `/undefineUserDataVar?address=<addr>`: Remove the user data variable at an address. Returns 404 if no data variable exists there.
 - `/updateAnalysisAndWait`: Force a full reanalysis and block until BN reports analysis is idle. Returns `{status, duration_ms, analysis_info}`. No client-side timeout — may run for many seconds on large binaries.
+- `/tagTypes`: List all tag types defined on the current view.
+- `/createTagType?name=<name>&icon=<glyph>`: Create a tag-type category (no-op if it already exists).
+- `/addTag?address=<addr>&tagType=<name>&data=<text>&kind=<auto|address|function|data>`: Attach a tag. `kind` defaults to `auto` (function-tag at a function start, address-tag inside a function, data-tag otherwise). `tagType` is auto-created if missing.
+- `/getTagsAt?address=<addr>`: Return data-, address-, and function-tags at the given address.
 - `/patch` or `/patchBytes?address=<addr>&data=<hex>&save_to_file=<bool>`: Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Address: hex (e.g., "0x401000") or decimal. Data: hex string (e.g., "90 90"). `save_to_file` (default True) saves to disk and re-signs on macOS.
 - `/renameVariables`: Batch rename locals in a function. Parameters:
   - Function: one of `functionAddress`, `address`, `function`, `functionName`, or `name`.

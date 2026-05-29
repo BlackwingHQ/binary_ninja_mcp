@@ -3671,6 +3671,317 @@ class BinaryOperations:
             "removed": prior_name,
         }
 
+    # ---------------- Tags ----------------
+    def _serialize_tag(self, tag: Any, kind: str) -> dict[str, Any]:
+        """Render a Tag into a JSON-friendly dict; tolerant of API drift."""
+        try:
+            type_obj = getattr(tag, "type", None)
+            type_name = getattr(type_obj, "name", None) if type_obj else None
+            icon = getattr(type_obj, "icon", None) if type_obj else None
+            data = getattr(tag, "data", None)
+            addr = getattr(tag, "address", None)
+            return {
+                "type": type_name,
+                "icon": icon,
+                "data": data,
+                "kind": kind,
+                "address": hex(int(addr)) if addr is not None else None,
+            }
+        except Exception:
+            return {"kind": kind, "raw": str(tag)}
+
+    def list_tag_types(self) -> list[dict[str, Any]]:
+        """Return all tag types known to the current view.
+
+        Returns:
+            List of ``{"name", "icon", "visible"}`` dicts. The list includes
+            BN's built-in tag types (Important, Bug, Bookmark, etc.) alongside
+            anything created by the user.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        out: list[dict[str, Any]] = []
+        try:
+            tag_types = getattr(bv, "tag_types", None) or {}
+            # tag_types is typically a dict {name: TagType}; iterate values.
+            iterable = (
+                tag_types.values() if hasattr(tag_types, "values") else tag_types
+            )
+            for tt in iterable:
+                try:
+                    out.append(
+                        {
+                            "name": getattr(tt, "name", None),
+                            "icon": getattr(tt, "icon", None),
+                            "visible": getattr(tt, "visible", True),
+                        }
+                    )
+                except Exception:
+                    continue
+        except Exception as e:
+            bn.log_warn(f"list_tag_types fallback: {e}")
+        return out
+
+    def create_tag_type(self, name: str, icon: str = "🏷") -> dict[str, Any]:
+        """Create a tag type, or return the existing one with that name.
+
+        Args:
+            name: Tag-type name (e.g. "Crypto", "Syscall", "TODO").
+            icon: Short string used as the BN icon (typically an emoji).
+
+        Returns:
+            Dict with status, the resolved name, icon, and a ``created`` flag
+            indicating whether a new type was created (False if it already
+            existed).
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the name is empty or BN refuses to create the type.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise ValueError("Empty tag-type name")
+        bv = self._current_view
+
+        existing = None
+        try:
+            tag_types = getattr(bv, "tag_types", None) or {}
+            if hasattr(tag_types, "get"):
+                existing = tag_types.get(clean_name)
+            elif hasattr(tag_types, "__getitem__"):
+                try:
+                    existing = tag_types[clean_name]
+                except KeyError:
+                    existing = None
+        except Exception:
+            existing = None
+
+        if existing is not None:
+            return {
+                "status": "ok",
+                "name": clean_name,
+                "icon": getattr(existing, "icon", None),
+                "created": False,
+            }
+
+        try:
+            new_type = bv.create_tag_type(clean_name, icon or "🏷")
+        except Exception as e:
+            raise ValueError(f"Failed to create tag type {clean_name!r}: {e!s}")
+
+        return {
+            "status": "ok",
+            "name": clean_name,
+            "icon": getattr(new_type, "icon", icon),
+            "created": True,
+        }
+
+    def _resolve_tag_type(self, name: str, auto_create: bool = True):
+        """Look up a tag type by name; optionally create it on the fly."""
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        tag_types = getattr(bv, "tag_types", None) or {}
+        tt = None
+        try:
+            if hasattr(tag_types, "get"):
+                tt = tag_types.get(name)
+            elif hasattr(tag_types, "__getitem__"):
+                try:
+                    tt = tag_types[name]
+                except KeyError:
+                    tt = None
+        except Exception:
+            tt = None
+        if tt is None and auto_create:
+            try:
+                tt = bv.create_tag_type(name, "🏷")
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to auto-create tag type {name!r}: {e!s}"
+                )
+        if tt is None:
+            raise ValueError(f"Tag type {name!r} not found")
+        return tt
+
+    def add_tag(
+        self,
+        address: int,
+        tag_type: str,
+        data: str = "",
+        kind: str = "auto",
+    ) -> dict[str, Any]:
+        """Attach a tag to an address, function, or data location.
+
+        Args:
+            address: Target address.
+            tag_type: Tag-type name. Auto-created (with the default icon) if it
+                doesn't already exist.
+            data: Optional payload string (description, context, etc.).
+            kind: One of ``"auto"`` (default), ``"address"``, ``"function"``,
+                or ``"data"``. When ``"auto"``, the server picks:
+
+                - ``"function"`` if the address is the start of a function,
+                - ``"address"`` if the address is inside a function body,
+                - ``"data"`` otherwise.
+
+        Returns:
+            Dict with status, the resolved kind, address, tag-type name, and
+            the data payload that was stored.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the kind is unknown or BN refuses to attach the tag.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        addr = int(address)
+        payload = data or ""
+        norm_kind = (kind or "auto").strip().lower()
+        if norm_kind not in ("auto", "address", "function", "data"):
+            raise ValueError(
+                f"Unknown tag kind {kind!r}. Use auto, address, function, or data."
+            )
+
+        # Locate any function that contains this address.
+        containing_funcs: list[Any] = []
+        try:
+            getter = getattr(bv, "get_functions_containing", None)
+            containing_funcs = list(getter(addr) or []) if callable(getter) else []
+        except Exception:
+            containing_funcs = []
+
+        if norm_kind == "auto":
+            if containing_funcs:
+                func = containing_funcs[0]
+                if int(getattr(func, "start", addr + 1)) == addr:
+                    norm_kind = "function"
+                else:
+                    norm_kind = "address"
+            else:
+                norm_kind = "data"
+
+        tt = self._resolve_tag_type(tag_type, auto_create=True)
+
+        try:
+            if norm_kind == "data":
+                creator = getattr(bv, "create_user_data_tag", None)
+                if not callable(creator):
+                    raise ValueError(
+                        "create_user_data_tag unavailable in this BN version"
+                    )
+                creator(addr, tt, payload, False)
+            elif norm_kind == "function":
+                if not containing_funcs:
+                    raise ValueError(
+                        f"No function at {hex(addr)} for kind='function'"
+                    )
+                func = containing_funcs[0]
+                creator = getattr(func, "create_user_function_tag", None)
+                if not callable(creator):
+                    raise ValueError(
+                        "Function.create_user_function_tag unavailable in this BN version"
+                    )
+                creator(tt, payload, False)
+            else:  # "address"
+                if not containing_funcs:
+                    raise ValueError(
+                        f"Address {hex(addr)} is not inside any function; "
+                        "use kind='data' for data-section tags."
+                    )
+                func = containing_funcs[0]
+                creator = getattr(func, "create_user_address_tag", None)
+                if not callable(creator):
+                    raise ValueError(
+                        "Function.create_user_address_tag unavailable in this BN version"
+                    )
+                creator(addr, tt, payload, False)
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to add {norm_kind} tag: {e!s}")
+
+        return {
+            "status": "ok",
+            "address": hex(addr),
+            "kind": norm_kind,
+            "tag_type": getattr(tt, "name", tag_type),
+            "data": payload,
+        }
+
+    def get_tags_at(self, address: int) -> dict[str, Any]:
+        """Return all tags at an address, across kinds.
+
+        Returns:
+            Dict with the address (echoed) and three lists keyed by kind:
+            ``data_tags`` (always populated when present), ``address_tags``
+            (in-function code addresses), and ``function_tags`` (tags on
+            the containing function as a whole).
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        addr = int(address)
+
+        data_tags: list[dict[str, Any]] = []
+        address_tags: list[dict[str, Any]] = []
+        function_tags: list[dict[str, Any]] = []
+
+        # Data tags at this address (only meaningful for data-section addrs,
+        # but BN returns empty otherwise, so we always ask).
+        try:
+            getter = getattr(bv, "get_user_data_tags_at", None)
+            if callable(getter):
+                for tag in getter(addr) or []:
+                    data_tags.append(self._serialize_tag(tag, "data"))
+        except Exception:
+            pass
+
+        # In-function tags. Use the first containing function for address-tag
+        # lookup; function tags come from that function too.
+        try:
+            container_getter = getattr(bv, "get_functions_containing", None)
+            containing = list(container_getter(addr) or []) if callable(container_getter) else []
+            for func in containing:
+                try:
+                    a_getter = getattr(func, "get_address_tags_at", None)
+                    if callable(a_getter):
+                        for tag in a_getter(addr) or []:
+                            address_tags.append(
+                                self._serialize_tag(tag, "address")
+                            )
+                except Exception:
+                    pass
+                try:
+                    f_tags = getattr(func, "function_tags", None)
+                    if f_tags is None:
+                        # Older BN: tags attribute / get_function_tags()
+                        f_tags = getattr(func, "tags", None)
+                    if f_tags:
+                        for tag in list(f_tags):
+                            function_tags.append(
+                                self._serialize_tag(tag, "function")
+                            )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return {
+            "address": hex(addr),
+            "data_tags": data_tags,
+            "address_tags": address_tags,
+            "function_tags": function_tags,
+            "total": len(data_tags) + len(address_tags) + len(function_tags),
+        }
+
     def update_analysis_and_wait(self) -> dict[str, Any]:
         """Force a full reanalysis of the current view and block until idle.
 
