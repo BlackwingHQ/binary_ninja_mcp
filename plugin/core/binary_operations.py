@@ -4204,6 +4204,86 @@ class BinaryOperations:
             "total": len(data_tags) + len(address_tags) + len(function_tags),
         }
 
+    def _undo_redo_state(self) -> dict[str, Any]:
+        """Best-effort snapshot of whether undo/redo are currently possible."""
+        bv = self._current_view
+        out: dict[str, Any] = {"can_undo": None, "can_redo": None}
+        if bv is None:
+            return out
+        for key, attr_name in (("can_undo", "can_undo"), ("can_redo", "can_redo")):
+            try:
+                attr = getattr(bv, attr_name, None)
+                if callable(attr):
+                    out[key] = bool(attr())
+                elif attr is not None:
+                    out[key] = bool(attr)
+            except Exception:
+                out[key] = None
+        return out
+
+    def undo(self) -> dict[str, Any]:
+        """Undo the most recent BN action, if any.
+
+        Returns:
+            Dict with status, the action performed, BN's raw return value
+            stringified, and the post-call ``can_undo`` / ``can_redo``
+            flags so the agent can tell whether further undo is available.
+
+        Raises:
+            RuntimeError: If no binary is loaded or BN refuses the call.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        undo_call = getattr(bv, "undo", None)
+        if not callable(undo_call):
+            raise RuntimeError(
+                "BinaryView.undo is unavailable in this Binary Ninja version"
+            )
+        try:
+            raw = undo_call()
+        except Exception as e:
+            raise RuntimeError(f"undo failed: {e!s}")
+        result = self._undo_redo_state()
+        result.update(
+            {
+                "status": "ok",
+                "action": "undo",
+                "result": str(raw) if raw is not None else None,
+            }
+        )
+        return result
+
+    def redo(self) -> dict[str, Any]:
+        """Redo the most recently undone BN action, if any.
+
+        Same response shape as :meth:`undo`.
+
+        Raises:
+            RuntimeError: If no binary is loaded or BN refuses the call.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        redo_call = getattr(bv, "redo", None)
+        if not callable(redo_call):
+            raise RuntimeError(
+                "BinaryView.redo is unavailable in this Binary Ninja version"
+            )
+        try:
+            raw = redo_call()
+        except Exception as e:
+            raise RuntimeError(f"redo failed: {e!s}")
+        result = self._undo_redo_state()
+        result.update(
+            {
+                "status": "ok",
+                "action": "redo",
+                "result": str(raw) if raw is not None else None,
+            }
+        )
+        return result
+
     def update_analysis_and_wait(self) -> dict[str, Any]:
         """Force a full reanalysis of the current view and block until idle.
 

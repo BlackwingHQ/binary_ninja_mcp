@@ -1841,6 +1841,22 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling updateAnalysisAndWait: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path == "/undo":
+                try:
+                    self._send_json_response(self.binary_ops.undo())
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling undo: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+            elif path == "/redo":
+                try:
+                    self._send_json_response(self.binary_ops.redo())
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling redo: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
             elif path == "/tagTypes":
                 try:
                     types = self.binary_ops.list_tag_types()

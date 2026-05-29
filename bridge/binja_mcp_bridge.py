@@ -891,6 +891,64 @@ def update_analysis() -> str:
     return str(data)
 
 
+def _format_undo_redo(data: dict, action: str) -> str:
+    can_undo = data.get("can_undo")
+    can_redo = data.get("can_redo")
+    pieces = []
+    if can_undo is True:
+        pieces.append("undo available")
+    elif can_undo is False:
+        pieces.append("no undo left")
+    if can_redo is True:
+        pieces.append("redo available")
+    elif can_redo is False:
+        pieces.append("no redo left")
+    suffix = f" ({'; '.join(pieces)})" if pieces else ""
+    verb = "Undone" if action == "undo" else "Redone"
+    return f"{verb}{suffix}"
+
+
+@mcp.tool()
+def undo() -> str:
+    """
+    Undo the most recent Binary Ninja action.
+
+    Useful when an experimental mutation didn't have the intended effect —
+    e.g. `define_user_data_var` propagated a wrong type through xrefs, or
+    a `rename_function` decision should be reverted. One call rolls the
+    last action back without manually reconstructing the prior state.
+
+    Returns:
+        Status string including whether further undo / redo is available.
+    """
+    data = get_json("undo")
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return _format_undo_redo(data, "undo")
+    return str(data)
+
+
+@mcp.tool()
+def redo() -> str:
+    """
+    Redo the most recently undone Binary Ninja action.
+
+    Returns:
+        Status string including whether further undo / redo is available.
+    """
+    data = get_json("redo")
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return _format_undo_redo(data, "redo")
+    return str(data)
+
+
 @mcp.tool()
 def list_tag_types() -> list:
     """
