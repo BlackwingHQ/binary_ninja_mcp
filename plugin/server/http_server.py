@@ -1501,6 +1501,83 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling makeFunctionAt: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path == "/defineUserSymbol":
+                address_str = params.get("address") or params.get("addr")
+                name = params.get("name") or params.get("symbol")
+                kind = params.get("kind") or params.get("type") or "data"
+                if not address_str or not name:
+                    self._send_json_response(
+                        {
+                            "error": "Missing parameters",
+                            "help": (
+                                "Required: address (hex like 0x401000 or decimal), name. "
+                                "Optional: kind (\"data\" default, or \"function\")."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    addr_int = (
+                        int(address_str, 16)
+                        if isinstance(address_str, str)
+                        and (
+                            address_str.startswith("0x")
+                            or address_str.startswith("0X")
+                            or any(c in "abcdefABCDEF" for c in address_str)
+                        )
+                        else int(address_str)
+                    )
+                except ValueError:
+                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    return
+                try:
+                    result = self.binary_ops.define_user_symbol(addr_int, name, kind)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling defineUserSymbol: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+            elif path == "/undefineUserSymbol":
+                address_str = params.get("address") or params.get("addr")
+                if not address_str:
+                    self._send_json_response(
+                        {
+                            "error": "Missing address parameter",
+                            "help": "Required: address (hex like 0x401000 or decimal)",
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    addr_int = (
+                        int(address_str, 16)
+                        if isinstance(address_str, str)
+                        and (
+                            address_str.startswith("0x")
+                            or address_str.startswith("0X")
+                            or any(c in "abcdefABCDEF" for c in address_str)
+                        )
+                        else int(address_str)
+                    )
+                except ValueError:
+                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    return
+                try:
+                    result = self.binary_ops.undefine_user_symbol(addr_int)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling undefineUserSymbol: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
             elif path == "/platforms":
                 try:
                     self._send_json_response(self.endpoints.list_platforms())

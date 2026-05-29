@@ -3573,6 +3573,103 @@ class BinaryOperations:
 
         return out
 
+    def define_user_symbol(
+        self, address: int, name: str, kind: str = "data"
+    ) -> dict[str, Any]:
+        """Create a user symbol (label) at an address.
+
+        Args:
+            address: Target address as an integer.
+            name: Symbol name. Whitespace is stripped; empty names are rejected.
+            kind: "data" (default) or "function". Selects the underlying
+                ``SymbolType`` (DataSymbol vs FunctionSymbol).
+
+        Returns:
+            Dict with status, address, the resolved name, and the kind used.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the name is empty, the kind is unknown, or BN
+                refuses to apply the symbol.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise ValueError("Empty symbol name")
+
+        kind_map: dict[str, Any] = {}
+        symbol_type_enum = getattr(bn, "SymbolType", None)
+        if symbol_type_enum is not None:
+            data_type = getattr(symbol_type_enum, "DataSymbol", None)
+            func_type = getattr(symbol_type_enum, "FunctionSymbol", None)
+            if data_type is not None:
+                kind_map["data"] = data_type
+            if func_type is not None:
+                kind_map["function"] = func_type
+        if not kind_map:
+            raise RuntimeError(
+                "SymbolType enum unavailable in this Binary Ninja version"
+            )
+
+        norm_kind = (kind or "data").strip().lower()
+        sym_type = kind_map.get(norm_kind)
+        if sym_type is None:
+            known = ", ".join(sorted(kind_map))
+            raise ValueError(
+                f"Unknown symbol kind {kind!r}. Use one of: {known}"
+            )
+
+        try:
+            symbol = bn.Symbol(sym_type, int(address), clean_name)
+            self._current_view.define_user_symbol(symbol)
+        except Exception as e:
+            raise ValueError(f"Failed to define symbol: {e!s}")
+
+        return {
+            "status": "ok",
+            "address": hex(int(address)),
+            "name": clean_name,
+            "kind": norm_kind,
+        }
+
+    def undefine_user_symbol(self, address: int) -> dict[str, Any]:
+        """Remove the user symbol at an address.
+
+        Returns:
+            Dict with status, address, and the name of the symbol removed
+            (when the BN API exposes it).
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If there is no symbol at the address, or BN refuses
+                to undefine it (e.g. it is an auto-generated symbol).
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+
+        addr = int(address)
+        sym = None
+        try:
+            sym = bv.get_symbol_at(addr)
+        except Exception:
+            sym = None
+        if sym is None:
+            raise ValueError(f"No symbol found at {hex(addr)}")
+
+        prior_name = getattr(sym, "name", None)
+        try:
+            bv.undefine_user_symbol(sym)
+        except Exception as e:
+            raise ValueError(f"Failed to undefine symbol: {e!s}")
+
+        return {
+            "status": "ok",
+            "address": hex(addr),
+            "removed": prior_name,
+        }
+
     def find_bytes(
         self,
         pattern: bytes,

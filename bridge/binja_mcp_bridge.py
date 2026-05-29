@@ -651,6 +651,66 @@ def find_bytes(
 
 
 @mcp.tool()
+def define_user_symbol(address: str, name: str, kind: str = "data") -> str:
+    """
+    Create a user symbol (label) at an address.
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+        name: Symbol name to assign.
+        kind: "data" (default) or "function". Selects the symbol type used
+            inside Binary Ninja; "data" is the right choice for labeling
+            globals, strings, jump tables, etc., while "function" declares
+            a function name without forcing function creation.
+
+    Returns:
+        Status string from the server, or an error message.
+    """
+    if not address or not name:
+        return "Error: address and name are required"
+    data = get_json(
+        "defineUserSymbol",
+        {"address": address, "name": name, "kind": kind},
+    )
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return (
+            f"Defined {data.get('kind', kind)} symbol "
+            f"{data.get('name')!r} at {data.get('address')}"
+        )
+    return str(data)
+
+
+@mcp.tool()
+def undefine_user_symbol(address: str) -> str:
+    """
+    Remove the user symbol at an address.
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+
+    Returns:
+        Status string from the server, or an error message. The server
+        rejects requests against auto-generated symbols and returns a clear
+        error in that case.
+    """
+    if not address:
+        return "Error: address is required"
+    data = get_json("undefineUserSymbol", {"address": address})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        removed = data.get("removed") or "(unnamed)"
+        return f"Removed symbol {removed!r} at {data.get('address')}"
+    return str(data)
+
+
+@mcp.tool()
 def get_binary_status() -> str:
     """
     Get the current status of the loaded binary.
