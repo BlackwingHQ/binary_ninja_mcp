@@ -12,6 +12,7 @@ venvs are reused unless `--force` is passed.
 import argparse
 import json
 import os
+import shlex
 import shutil
 import sys
 
@@ -92,8 +93,8 @@ def run(force: bool = False, regen_token: bool = False, quiet: bool = False) -> 
         link_target = os.path.join(bn_plugins, "binary_ninja_mcp")
         _say(quiet, "If you haven't already, install this plugin into Binary Ninja's")
         _say(quiet, f"plugins folder ({bn_plugins}). For development, symlink:")
-        _say(quiet, f"  mkdir -p {bn_plugins!s}")
-        _say(quiet, f"  ln -s {plugin_root()} {link_target}")
+        _say(quiet, f"  mkdir -p {shlex.quote(bn_plugins)}")
+        _say(quiet, f"  ln -s {shlex.quote(plugin_root())} {shlex.quote(link_target)}")
         _say(quiet, "(In BN: Plugins -> Open Plugin Folder opens the same directory.)")
     else:
         _say(
