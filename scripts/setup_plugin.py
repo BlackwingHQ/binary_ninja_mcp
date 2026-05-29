@@ -22,6 +22,7 @@ _PLUGIN_ROOT = os.path.dirname(_HERE)
 if _PLUGIN_ROOT not in sys.path:
     sys.path.insert(0, _PLUGIN_ROOT)
 
+from plugin.utils.auth import ensure_token, mint_token, token_file_path  # noqa: E402
 from plugin.utils.installer import (  # noqa: E402
     MCP_SERVER_KEY,
     bridge_entrypoint,
@@ -40,7 +41,7 @@ def _say(quiet: bool, msg: str) -> None:
         print(msg)
 
 
-def run(force: bool = False, quiet: bool = False) -> int:
+def run(force: bool = False, regen_token: bool = False, quiet: bool = False) -> int:
     """Create or refresh the venv and install requirements. Return exit code."""
     if force and os.path.isdir(venv_dir()):
         _say(quiet, f"Removing existing venv at {venv_dir()}")
@@ -64,6 +65,15 @@ def run(force: bool = False, quiet: bool = False) -> int:
     if not os.path.exists(req):
         _say(quiet, f"No requirements file at {req}; skipping pip install.")
 
+    # Mint an auth token on first setup; --regen-token forces a fresh one.
+    # The token file is read on every request by both the plugin and the
+    # bridge, so a regen takes effect after the next MCP client restart.
+    if regen_token:
+        mint_token()
+        _say(quiet, f"Regenerated auth token at {token_file_path()}")
+    else:
+        ensure_token()
+
     py = venv_python()
     bridge = bridge_entrypoint()
 
@@ -71,6 +81,7 @@ def run(force: bool = False, quiet: bool = False) -> int:
     _say(quiet, "Setup complete.")
     _say(quiet, f"  venv python : {py}")
     _say(quiet, f"  bridge      : {bridge}")
+    _say(quiet, f"  auth token  : {token_file_path()}")
     _say(quiet, "")
     _say(quiet, "To register the bridge with a specific MCP client:")
     _say(quiet, "  python scripts/install_mcp_client.py --list-clients")
@@ -96,12 +107,18 @@ def main() -> int:
         help="Recreate the venv even if it already exists.",
     )
     parser.add_argument(
+        "--regen-token",
+        action="store_true",
+        help="Replace the existing auth token with a fresh one. "
+        "Restart the MCP client(s) to pick up the new token.",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Suppress non-error output.",
     )
     args = parser.parse_args()
-    return run(force=args.force, quiet=args.quiet)
+    return run(force=args.force, regen_token=args.regen_token, quiet=args.quiet)
 
 
 if __name__ == "__main__":

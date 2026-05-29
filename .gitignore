@@ -26,5 +26,6 @@ Desktop.ini
 
 .env
 .mcp_auto_setup_done
+.mcp_auth_token
 
 bridge/node_modules

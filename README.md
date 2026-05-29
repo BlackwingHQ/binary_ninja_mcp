@@ -65,7 +65,7 @@ To manually install the extension, this repository can be copied into the [Binar
 Setup is a two-step process: prepare the plugin's local environment once per system, then register the bridge with each MCP client you want to use it from.
 
 ```bash
-# One-time per system: create .venv and install bridge dependencies.
+# One-time per system: create .venv, install bridge dependencies, mint an auth token.
 python scripts/setup_plugin.py
 
 # Per MCP client: register the bridge in that client's config file.
@@ -78,6 +78,18 @@ python scripts/install_mcp_client.py --config-file ~/some/mcp.json
 ```
 
 `install_mcp_client.py` writes to exactly one file per invocation and refuses to run if `setup_plugin.py` hasn't been run yet. For an unsupported client, `setup_plugin.py` prints a ready-to-paste JSON snippet on completion that you can drop into the client's config by hand.
+
+#### Auth token
+
+The HTTP server only accepts requests carrying the right bearer token. `setup_plugin.py` mints one on first run and writes it to `<plugin_root>/.mcp_auth_token` (mode `0600`, gitignored). The bridge reads the same file directly, so MCP client configs never carry the secret — meaning you can share or commit those configs without leaking auth.
+
+To rotate the token:
+
+```bash
+python scripts/setup_plugin.py --regen-token
+```
+
+Then restart your MCP client(s) so they respawn the bridge. The plugin re-reads the file on every request, so Binary Ninja does not need to be restarted.
 
 ## Usage
 

@@ -10,11 +10,34 @@ def _bridge_excepthook(exc_type, exc, tb):
 
 _sys.excepthook = _bridge_excepthook
 
+import os as _os
+
 import requests
 from mcp.server.fastmcp import FastMCP
 
 binja_server_url = "http://localhost:9009"
 mcp = FastMCP("binja-mcp")
+
+# Token file lives at <plugin_root>/.mcp_auth_token, two dirs up from this file.
+# Re-read on every request so `setup_plugin.py --regen-token` takes effect on
+# the next call without needing to restart the MCP client.
+_TOKEN_FILE = _os.path.abspath(
+    _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", ".mcp_auth_token")
+)
+
+
+def _read_auth_token() -> str | None:
+    try:
+        with open(_TOKEN_FILE, encoding="utf-8") as f:
+            tok = f.read().strip()
+    except OSError:
+        return None
+    return tok or None
+
+
+def _auth_headers() -> dict:
+    tok = _read_auth_token()
+    return {"Authorization": f"Bearer {tok}"} if tok else {}
 
 
 def _active_filename() -> str:
@@ -38,9 +61,9 @@ def safe_get(endpoint: str, params: dict | None = None, timeout: float | None = 
 
     try:
         if timeout is None:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, headers=_auth_headers())
         else:
-            response = requests.get(url, params=params, timeout=timeout)
+            response = requests.get(url, params=params, headers=_auth_headers(), timeout=timeout)
         response.encoding = "utf-8"
         if response.ok:
             return response.text.splitlines()
@@ -62,9 +85,9 @@ def get_json(endpoint: str, params: dict | None = None, timeout: float | None = 
     url = f"{binja_server_url}/{endpoint}"
     try:
         if timeout is None:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, headers=_auth_headers())
         else:
-            response = requests.get(url, params=params, timeout=timeout)
+            response = requests.get(url, params=params, headers=_auth_headers(), timeout=timeout)
         response.encoding = "utf-8"
         # Try to parse JSON regardless of status
         try:
@@ -93,9 +116,9 @@ def get_text(endpoint: str, params: dict | None = None, timeout: float | None = 
     url = f"{binja_server_url}/{endpoint}"
     try:
         if timeout is None:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, headers=_auth_headers())
         else:
-            response = requests.get(url, params=params, timeout=timeout)
+            response = requests.get(url, params=params, headers=_auth_headers(), timeout=timeout)
         response.encoding = "utf-8"
         if response.ok:
             return response.text
@@ -108,10 +131,18 @@ def get_text(endpoint: str, params: dict | None = None, timeout: float | None = 
 def safe_post(endpoint: str, data: dict | str) -> str:
     try:
         if isinstance(data, dict):
-            response = requests.post(f"{binja_server_url}/{endpoint}", data=data, timeout=5)
+            response = requests.post(
+                f"{binja_server_url}/{endpoint}",
+                data=data,
+                headers=_auth_headers(),
+                timeout=5,
+            )
         else:
             response = requests.post(
-                f"{binja_server_url}/{endpoint}", data=data.encode("utf-8"), timeout=5
+                f"{binja_server_url}/{endpoint}",
+                data=data.encode("utf-8"),
+                headers=_auth_headers(),
+                timeout=5,
             )
         response.encoding = "utf-8"
         if response.ok:

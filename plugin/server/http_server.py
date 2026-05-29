@@ -11,6 +11,7 @@ from ..api.endpoints import BinaryNinjaEndpoints
 from ..core.binary_operations import BinaryOperations
 from ..core.config import Config
 from ..utils.approval import require_approval
+from ..utils.auth import matches as auth_matches, read_token, token_file_path
 from ..utils.number_utils import convert_number as util_convert_number
 from ..utils.string_utils import parse_int_or_default
 
@@ -243,6 +244,24 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _check_auth(self) -> bool:
+        """Reject the request unless it carries the right Bearer token.
+
+        Re-reads the token file each call so `setup_plugin.py --regen-token`
+        takes effect without restarting Binary Ninja.
+        """
+        if auth_matches(self.headers.get("Authorization")):
+            return True
+        if read_token() is None:
+            hint = (
+                f"Auth token not configured. Run `python scripts/setup_plugin.py` "
+                f"to generate {token_file_path()}."
+            )
+        else:
+            hint = "Send Authorization: Bearer <token> where <token> is the contents of " + token_file_path()
+        self._send_json_response({"error": "Unauthorized", "hint": hint}, 401)
+        return False
+
     def _approve_patch(self, address, data, save_to_file) -> bool:
         bv_filename = None
         try:
@@ -283,6 +302,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         try:
+            if not self._check_auth():
+                return
             # For all endpoints except /status, /convertNumber, /platforms, /binaries, /views, /selectBinary, check loaded
             if (
                 not (
@@ -1949,6 +1970,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            if not self._check_auth():
+                return
             if not self._check_binary_loaded():
                 return
 
