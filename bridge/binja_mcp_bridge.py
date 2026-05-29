@@ -711,6 +711,63 @@ def undefine_user_symbol(address: str) -> str:
 
 
 @mcp.tool()
+def define_user_data_var(address: str, type: str) -> str:
+    """
+    Type a global at an address as a user data variable.
+
+    Typing a global propagates the type through every cross-reference in
+    decompilation — one of the highest-leverage RE actions. Use after the
+    type itself is known to Binary Ninja (declared via `declare_c_type` or
+    `define_types`, or from a stock type like "int" or "uint8_t").
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+        type: C-style type string (e.g. "int", "uint8_t", "struct Foo *",
+            "char[16]"). Parsed via BinaryView.parse_type_string.
+
+    Returns:
+        Status string from the server, or an error message.
+    """
+    if not address or not type:
+        return "Error: address and type are required"
+    data = get_json("defineUserDataVar", {"address": address, "type": type})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return (
+            f"Defined data variable {data.get('type')!r} at {data.get('address')}"
+        )
+    return str(data)
+
+
+@mcp.tool()
+def undefine_user_data_var(address: str) -> str:
+    """
+    Remove a user data variable at an address.
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+
+    Returns:
+        Status string from the server, or an error message. The server
+        returns 404 if no data variable exists at the address.
+    """
+    if not address:
+        return "Error: address is required"
+    data = get_json("undefineUserDataVar", {"address": address})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        prior = data.get("removed_type") or "(unknown type)"
+        return f"Removed data variable (was {prior}) at {data.get('address')}"
+    return str(data)
+
+
+@mcp.tool()
 def get_binary_status() -> str:
     """
     Get the current status of the loaded binary.

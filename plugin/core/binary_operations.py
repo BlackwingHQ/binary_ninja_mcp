@@ -3670,6 +3670,97 @@ class BinaryOperations:
             "removed": prior_name,
         }
 
+    def define_user_data_var(
+        self, address: int, type_str: str
+    ) -> dict[str, Any]:
+        """Type a global at an address as a user data variable.
+
+        Args:
+            address: Target address as an integer.
+            type_str: C-style type string (e.g. "int", "struct Foo *",
+                "char[16]"). Parsed via ``BinaryView.parse_type_string``.
+
+        Returns:
+            Dict with status, address, and the resolved type as a string.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the type string is empty, fails to parse, or BN
+                refuses to apply the data variable.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_type = (type_str or "").strip()
+        if not clean_type:
+            raise ValueError("Empty type string")
+        bv = self._current_view
+        addr = int(address)
+
+        parsed_type = None
+        try:
+            parsed_type, _ = bv.parse_type_string(clean_type)
+        except Exception as e:
+            raise ValueError(f"Failed to parse type {clean_type!r}: {e!s}")
+        if parsed_type is None:
+            raise ValueError(f"Type {clean_type!r} parsed to None")
+
+        try:
+            bv.define_user_data_var(addr, parsed_type)
+        except Exception as e:
+            raise ValueError(
+                f"Failed to define data variable at {hex(addr)}: {e!s}"
+            )
+
+        return {
+            "status": "ok",
+            "address": hex(addr),
+            "type": str(parsed_type),
+        }
+
+    def undefine_user_data_var(self, address: int) -> dict[str, Any]:
+        """Remove a user data variable at an address.
+
+        Returns:
+            Dict with status, address, and the prior type when one was
+            observable at the address.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If no data variable exists at the address, or BN
+                refuses to undefine it.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        addr = int(address)
+
+        dv = None
+        try:
+            dv = bv.get_data_var_at(addr)
+        except Exception:
+            dv = None
+        if dv is None:
+            raise ValueError(f"No data variable at {hex(addr)}")
+
+        prior_type = None
+        try:
+            prior_type = str(getattr(dv, "type", None))
+        except Exception:
+            prior_type = None
+
+        try:
+            bv.undefine_user_data_var(addr)
+        except Exception as e:
+            raise ValueError(
+                f"Failed to undefine data variable at {hex(addr)}: {e!s}"
+            )
+
+        return {
+            "status": "ok",
+            "address": hex(addr),
+            "removed_type": prior_type,
+        }
+
     def undefine_user_type(self, name: str) -> dict[str, Any]:
         """Remove a user-defined type by name.
 
