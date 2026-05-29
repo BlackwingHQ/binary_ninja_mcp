@@ -15,15 +15,17 @@ import os
 import shutil
 import sys
 
-# Allow running directly from the scripts/ directory without installing the
-# package: add the plugin root to sys.path so `plugin.utils.installer` resolves.
+# Import the leaf modules under plugin/utils directly. Going through the
+# `plugin` package would run `plugin/__init__.py`, which imports binaryninja
+# and only works inside Binary Ninja itself.
 _HERE = os.path.dirname(os.path.realpath(__file__))
 _PLUGIN_ROOT = os.path.dirname(_HERE)
-if _PLUGIN_ROOT not in sys.path:
-    sys.path.insert(0, _PLUGIN_ROOT)
+_UTILS = os.path.join(_PLUGIN_ROOT, "plugin", "utils")
+if _UTILS not in sys.path:
+    sys.path.insert(0, _UTILS)
 
-from plugin.utils.auth import ensure_token, mint_token, token_file_path  # noqa: E402
-from plugin.utils.installer import (  # noqa: E402
+from auth import ensure_token, mint_token, token_file_path  # noqa: E402
+from installer import (  # noqa: E402
     MCP_SERVER_KEY,
     bridge_entrypoint,
     collect_python_env,

@@ -9,11 +9,21 @@ entrypoint is, and where each supported MCP client keeps its config.
 import os
 import sys
 
-from .python_detection import (
-    copy_python_env,
-    create_venv_with_system_python,
-    get_python_executable,
-)
+try:
+    from .python_detection import (
+        copy_python_env,
+        create_venv_with_system_python,
+        get_python_executable,
+    )
+except ImportError:
+    # Loaded directly via sys.path by the setup scripts rather than as part
+    # of the `plugin.utils` package — keeps the scripts usable without
+    # importing `plugin/__init__.py` (which would in turn require BN).
+    from python_detection import (  # type: ignore[no-redef]
+        copy_python_env,
+        create_venv_with_system_python,
+        get_python_executable,
+    )
 
 # Key used inside each MCP client's `mcpServers` map.
 MCP_SERVER_KEY = "binary_ninja_mcp"
