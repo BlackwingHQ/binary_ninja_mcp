@@ -1777,6 +1777,57 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling addTag: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path == "/getVarUses" or path == "/getVarDefinitions":
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("address")
+                    or params.get("function")
+                    or params.get("functionName")
+                    or params.get("name")
+                )
+                var_name = (
+                    params.get("variableName")
+                    or params.get("variable")
+                    or params.get("var")
+                )
+                il_level = (
+                    params.get("ilLevel")
+                    or params.get("il_level")
+                    or params.get("level")
+                    or "all"
+                )
+                if not fn_ident or not var_name:
+                    self._send_json_response(
+                        {
+                            "error": "Missing parameters",
+                            "help": (
+                                "Required: function (or functionName/address) and "
+                                "variable (or variableName/var). Optional: ilLevel "
+                                "(all|hlil|mlil|llil; default all)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    if path == "/getVarUses":
+                        result = self.binary_ops.get_var_uses(
+                            fn_ident, var_name, il_level
+                        )
+                    else:
+                        result = self.binary_ops.get_var_definitions(
+                            fn_ident, var_name, il_level
+                        )
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling {path}: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getTagsAt":
                 address_str = params.get("address") or params.get("addr")
                 if not address_str:

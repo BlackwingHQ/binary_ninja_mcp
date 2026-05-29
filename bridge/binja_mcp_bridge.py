@@ -954,6 +954,92 @@ def _format_tag(tag: dict) -> str:
     return f"{base}: {data}" if data else base
 
 
+def _format_var_ref(ref: dict) -> str:
+    addr = ref.get("address") or "?"
+    il_type = ref.get("il_type") or "?"
+    snippet = ref.get("hlil") or ""
+    base = f"{addr}  [{il_type}]"
+    return f"{base}  {snippet}" if snippet else base
+
+
+@mcp.tool()
+def get_var_uses(function: str, variable: str, il_level: str = "all") -> list:
+    """
+    Find every use site of a local variable inside a function.
+
+    Use this before renaming or retyping a local to confirm the new name
+    or type fits everywhere the variable appears, or for taint-style
+    reasoning ("where else does this argument flow?").
+
+    Args:
+        function: Function name or address (hex like "0x401000" or decimal).
+        variable: Local variable name (as shown by `get_stack_frame_vars` or
+            in the decompilation).
+        il_level: Filter — "all" (default), "hlil", "mlil", or "llil".
+            Case-insensitive substring match.
+
+    Returns:
+        List of strings, one per use site, formatted as
+        "<address>  [<il_type>]  <hlil snippet>". Returns "(no uses)" if
+        the variable isn't referenced.
+    """
+    if not function or not variable:
+        return ["Error: function and variable are required"]
+    data = get_json(
+        "getVarUses",
+        {"function": function, "variable": variable, "ilLevel": il_level},
+    )
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    uses = data.get("uses", []) or []
+    if not uses:
+        return ["(no uses)"]
+    return [_format_var_ref(u) for u in uses]
+
+
+@mcp.tool()
+def get_var_definitions(
+    function: str, variable: str, il_level: str = "all"
+) -> list:
+    """
+    Find every definition (write) site of a local variable inside a function.
+
+    Use this to understand where a value comes from — e.g. "this argument
+    looks like a length, where is it computed?" — without re-parsing the
+    decompilation text.
+
+    Args:
+        function: Function name or address (hex like "0x401000" or decimal).
+        variable: Local variable name.
+        il_level: Filter — "all" (default), "hlil", "mlil", or "llil".
+
+    Returns:
+        List of strings, one per definition site, formatted as
+        "<address>  [<il_type>]  <hlil snippet>". Returns "(no definitions)"
+        if the variable is never written.
+    """
+    if not function or not variable:
+        return ["Error: function and variable are required"]
+    data = get_json(
+        "getVarDefinitions",
+        {"function": function, "variable": variable, "ilLevel": il_level},
+    )
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    defs = data.get("definitions", []) or []
+    if not defs:
+        return ["(no definitions)"]
+    return [_format_var_ref(d) for d in defs]
+
+
 @mcp.tool()
 def get_binary_status() -> str:
     """

@@ -3671,6 +3671,153 @@ class BinaryOperations:
             "removed": prior_name,
         }
 
+    # ---------------- Variable data flow ----------------
+    def _serialize_var_refs(
+        self,
+        func: Any,
+        refs: list[Any],
+        il_level: str = "all",
+    ) -> list[dict[str, Any]]:
+        """Convert a list of ILReferenceSource-like objects into JSON dicts.
+
+        Filters by ``il_level`` when it is one of "hlil", "mlil", "llil"
+        (case-insensitive substring match against BN's il_type string).
+        Dedupes by ``(address, il_type)`` so a use that BN reports at
+        multiple IL levels isn't double-counted at the same level.
+        Attaches the HLIL line at each address as a best-effort snippet.
+        """
+        out: list[dict[str, Any]] = []
+        seen: set[tuple[int, str | None]] = set()
+        wanted = (il_level or "all").strip().lower()
+        for ref in refs:
+            try:
+                ref_il_type = getattr(ref, "il_type", None)
+                il_str = str(ref_il_type) if ref_il_type is not None else None
+                if wanted != "all" and il_str and wanted not in il_str.lower():
+                    continue
+                addr = getattr(ref, "addr", None)
+                if addr is None:
+                    addr = getattr(ref, "address", None)
+                if addr is None:
+                    continue
+                addr_int = int(addr)
+                key = (addr_int, il_str)
+                if key in seen:
+                    continue
+                seen.add(key)
+                snippet: str | None = None
+                try:
+                    hlil = getattr(func, "hlil", None)
+                    if hlil is not None:
+                        getter = getattr(hlil, "get_instructions_at", None)
+                        if callable(getter):
+                            instrs = list(getter(addr_int) or [])
+                            if instrs:
+                                snippet = str(instrs[0])
+                except Exception:
+                    snippet = None
+                out.append(
+                    {
+                        "address": hex(addr_int),
+                        "il_type": il_str,
+                        "hlil": snippet,
+                    }
+                )
+            except Exception:
+                continue
+        return out
+
+    def _resolve_func_and_var(
+        self, function_ident: str | int, var_name: str
+    ) -> tuple[Any, Any]:
+        """Resolve (function, variable) or raise ValueError with a clear msg."""
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_var = (var_name or "").strip()
+        if not clean_var:
+            raise ValueError("Empty variable name")
+        func = self.get_function_by_name_or_address(function_ident)
+        if func is None:
+            raise ValueError(f"Function not found: {function_ident!r}")
+        var = None
+        try:
+            getter = getattr(func, "get_variable_by_name", None)
+            if callable(getter):
+                var = getter(clean_var)
+        except Exception:
+            var = None
+        if var is None:
+            raise ValueError(
+                f"Variable {clean_var!r} not found in {func.name}"
+            )
+        return func, var
+
+    def get_var_uses(
+        self,
+        function_ident: str | int,
+        var_name: str,
+        il_level: str = "all",
+    ) -> dict[str, Any]:
+        """Return all use sites of a local variable inside a function.
+
+        Args:
+            function_ident: Function name or address.
+            var_name: Local variable name (as shown by
+                ``get_stack_frame_vars`` or in the decompilation).
+            il_level: Filter by IL level — "all" (default), "hlil",
+                "mlil", or "llil". Case-insensitive.
+
+        Returns:
+            Dict with function, function_address, variable, il_level,
+            count, and a ``uses`` list of ``{address, il_type, hlil}``
+            entries.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function or variable can't be found, or
+                the BN call fails.
+        """
+        func, var = self._resolve_func_and_var(function_ident, var_name)
+        try:
+            refs = list(func.get_var_uses(var) or [])
+        except Exception as e:
+            raise ValueError(f"Failed to get var uses: {e!s}")
+        uses = self._serialize_var_refs(func, refs, il_level)
+        return {
+            "function": getattr(func, "name", None),
+            "function_address": hex(int(getattr(func, "start", 0))),
+            "variable": (var_name or "").strip(),
+            "il_level": il_level,
+            "count": len(uses),
+            "uses": uses,
+        }
+
+    def get_var_definitions(
+        self,
+        function_ident: str | int,
+        var_name: str,
+        il_level: str = "all",
+    ) -> dict[str, Any]:
+        """Return all definition sites of a local variable inside a function.
+
+        Same shape as :meth:`get_var_uses` but the result list is keyed
+        ``definitions`` instead of ``uses``.
+        """
+        func, var = self._resolve_func_and_var(function_ident, var_name)
+        try:
+            refs = list(func.get_var_definitions(var) or [])
+        except Exception as e:
+            raise ValueError(f"Failed to get var definitions: {e!s}")
+        defs = self._serialize_var_refs(func, refs, il_level)
+        return {
+            "function": getattr(func, "name", None),
+            "function_address": hex(int(getattr(func, "start", 0))),
+            "variable": (var_name or "").strip(),
+            "il_level": il_level,
+            "count": len(defs),
+            "definitions": defs,
+        }
+
     # ---------------- Tags ----------------
     def _serialize_tag(self, tag: Any, kind: str) -> dict[str, Any]:
         """Render a Tag into a JSON-friendly dict; tolerant of API drift."""
