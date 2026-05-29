@@ -48,15 +48,7 @@ Any other MCP-protocol client can be wired up by hand with `--config-file <path>
 
 ### Extension Installation
 
-Install the plugin via the Binary Ninja Plugin Manager or by copying this repository into your plugins folder. Either way, you'll then run the setup scripts described below to register the bridge with your MCP client.
-
-#### Binary Ninja Plugin Manager
-
-You may install the extension through Binary Ninja's Plugin Manager (`Plugins > Manage Plugins`).
-
-![Plugin Manager](images/plugin-manager-listing.png)
-
-#### Manual Install
+Binary Ninja's Plugin Manager (`Plugins > Manage Plugins`) only lists the upstream plugin — it cannot install this fork. Install manually instead, then run the setup scripts described below to register the bridge with your MCP client.
 
 Copy or symlink this repository into Binary Ninja's [plugins folder](https://docs.binary.ninja/guide/plugins.html):
 
