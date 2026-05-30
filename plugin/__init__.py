@@ -10,10 +10,6 @@ def _apply_settings_to_config():
     try:
         settings = Settings()
 
-        # mcp.exposeToNetwork is intentionally ignored here: the HTTP server has
-        # no authentication, so binding to 0.0.0.0 would expose unauthenticated
-        # patch/load and other RE tooling to any host that can reach the port.
-        # Re-enable by honoring the setting once HTTP auth is implemented.
         plugin.config.server.host = "localhost"
 
         # Apply port setting
@@ -114,10 +110,6 @@ def _register_settings():
     settings.register_setting(
         "mcp.showStatusButton",
         '{ "title": "Show Status Button", "type": "boolean", "default": true, "description": "Show MCP server status button in the status bar." }',
-    )
-    settings.register_setting(
-        "mcp.exposeToNetwork",
-        '{ "title": "Expose to Network", "type": "boolean", "default": false, "description": "Currently disabled in code: the server always binds to localhost regardless of this value. The HTTP server has no authentication, so exposing it would let any host that can reach the port use unauthenticated patch/load tooling. Re-enable in plugin/__init__.py once HTTP auth lands." }',
     )
     settings.register_setting(
         "mcp.port",
