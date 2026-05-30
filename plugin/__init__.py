@@ -661,7 +661,11 @@ try:
             except Exception as e:
                 bn.log_error(f"MCP Max OnAfterOpenFile error: {e}")
 
-        # Best-effort close notifications (may not be called on all versions)
+        # Best-effort close notifications (may not be called on all versions).
+        # BN expects OnBeforeCloseFile to return a bool: True to allow the
+        # close to proceed, False to veto it. We never veto — just do
+        # bookkeeping and return True so BN doesn't log a RuntimeWarning
+        # about a NoneType return.
         def OnBeforeCloseFile(self, *args):  # type: ignore[override]
             try:
                 bv = self._get_active_bv()
@@ -674,6 +678,7 @@ try:
                         plugin.server.binary_ops.unregister_by_filename(fn)
             except Exception:
                 pass
+            return True
 
         def OnAfterCloseFile(self, *args):  # type: ignore[override]
             try:
