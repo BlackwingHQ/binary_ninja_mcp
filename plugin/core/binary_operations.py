@@ -3746,6 +3746,149 @@ class BinaryOperations:
             "parameter_count": parameter_count,
         }
 
+    def set_function_can_return(
+        self, function_ident: str | int, can_return: bool
+    ) -> dict[str, Any]:
+        """Override BN's no-return inference for a function.
+
+        Use this when BN thinks a function returns but it actually
+        terminates the process (custom abort/panic wrappers), or vice
+        versa. BN uses can_return to propagate flow into callers, so
+        getting this wrong corrupts the CFG of every caller.
+
+        Args:
+            function_ident: Function name or address.
+            can_return: True if the function returns; False to mark it
+                as never-returning.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function can't be found or BN refuses.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        func = self.get_function_by_name_or_address(function_ident)
+        if func is None:
+            raise ValueError(f"Function not found: {function_ident!r}")
+
+        value = bool(can_return)
+        setter = getattr(func, "set_user_can_return", None)
+        try:
+            if callable(setter):
+                setter(value)
+            else:
+                # Fallback: property setter
+                try:
+                    func.can_return = value
+                except Exception as e:
+                    raise ValueError(
+                        f"Function.set_user_can_return / can_return setter unavailable: {e!s}"
+                    )
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to set can_return: {e!s}")
+
+        return {
+            "status": "ok",
+            "function": getattr(func, "name", None),
+            "address": hex(int(getattr(func, "start", 0))),
+            "can_return": value,
+        }
+
+    def set_function_return_type(
+        self, function_ident: str | int, type_str: str
+    ) -> dict[str, Any]:
+        """Set a function's return type without rewriting the full prototype.
+
+        Args:
+            function_ident: Function name or address.
+            type_str: C-style type string (e.g. "int", "void *",
+                "struct Foo *"). Parsed via
+                ``BinaryView.parse_type_string``.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function can't be found, the type string
+                fails to parse, or BN refuses to apply it.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_type = (type_str or "").strip()
+        if not clean_type:
+            raise ValueError("Empty type string")
+        bv = self._current_view
+        func = self.get_function_by_name_or_address(function_ident)
+        if func is None:
+            raise ValueError(f"Function not found: {function_ident!r}")
+
+        parsed_type = None
+        try:
+            parsed_type, _ = bv.parse_type_string(clean_type)
+        except Exception as e:
+            raise ValueError(f"Failed to parse type {clean_type!r}: {e!s}")
+        if parsed_type is None:
+            raise ValueError(f"Type {clean_type!r} parsed to None")
+
+        setter = getattr(func, "set_user_return_type", None)
+        try:
+            if callable(setter):
+                setter(parsed_type)
+            else:
+                try:
+                    func.return_type = parsed_type
+                except Exception as e:
+                    raise ValueError(
+                        f"Function.set_user_return_type / return_type setter unavailable: {e!s}"
+                    )
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Failed to apply return type: {e!s}")
+
+        return {
+            "status": "ok",
+            "function": getattr(func, "name", None),
+            "address": hex(int(getattr(func, "start", 0))),
+            "return_type": str(parsed_type),
+        }
+
+    def set_function_inline(
+        self, function_ident: str | int, inline: bool
+    ) -> dict[str, Any]:
+        """Force or un-force BN's inline-during-analysis behavior.
+
+        Useful for small helper functions where inlining cleans up
+        decompilation, or for un-inlining when BN's heuristic made the
+        wrong call.
+
+        Args:
+            function_ident: Function name or address.
+            inline: True to force inlining; False to disable.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function can't be found or BN refuses.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        func = self.get_function_by_name_or_address(function_ident)
+        if func is None:
+            raise ValueError(f"Function not found: {function_ident!r}")
+
+        value = bool(inline)
+        try:
+            func.inline_during_analysis = value
+        except Exception as e:
+            raise ValueError(f"Failed to set inline_during_analysis: {e!s}")
+
+        return {
+            "status": "ok",
+            "function": getattr(func, "name", None),
+            "address": hex(int(getattr(func, "start", 0))),
+            "inline_during_analysis": value,
+        }
+
     # ---------------- Variable data flow ----------------
     def _serialize_var_refs(
         self,

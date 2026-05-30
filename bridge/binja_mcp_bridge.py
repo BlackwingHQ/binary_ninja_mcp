@@ -1199,6 +1199,104 @@ def get_function_metadata(function: str) -> list:
 
 
 @mcp.tool()
+def set_function_can_return(function: str, can_return: bool) -> str:
+    """
+    Override BN's no-return inference for a function.
+
+    Use this after `get_function_metadata` reveals BN guessed wrong about
+    whether a function returns — e.g. for custom abort/panic wrappers that
+    BN doesn't recognize. Wrong `can_return` corrupts the CFG of every
+    caller, so this is one of the highest-impact corrections available.
+
+    Args:
+        function: Function name or address (hex like "0x401000" or decimal).
+        can_return: True to mark as returning, False as never-returning.
+
+    Returns:
+        Status string from the server.
+    """
+    if not function:
+        return "Error: function is required"
+    data = get_json(
+        "setFunctionCanReturn",
+        {"function": function, "canReturn": "true" if can_return else "false"},
+    )
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return (
+            f"Set {data.get('function')!r} can_return={data.get('can_return')} "
+            f"at {data.get('address')}"
+        )
+    return str(data)
+
+
+@mcp.tool()
+def set_function_return_type(function: str, type: str) -> str:
+    """
+    Set just a function's return type without rewriting the prototype.
+
+    Args:
+        function: Function name or address.
+        type: C-style type string (e.g. "int", "void *", "struct Foo *").
+
+    Returns:
+        Status string from the server.
+    """
+    if not function or not type:
+        return "Error: function and type are required"
+    data = get_json(
+        "setFunctionReturnType",
+        {"function": function, "type": type},
+    )
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return (
+            f"Set {data.get('function')!r} return_type={data.get('return_type')!r} "
+            f"at {data.get('address')}"
+        )
+    return str(data)
+
+
+@mcp.tool()
+def set_function_inline(function: str, inline: bool) -> str:
+    """
+    Force or un-force BN's inline-during-analysis behavior for a function.
+
+    Useful for tiny helpers where inlining cleans up decompilation, or
+    when BN's auto-inline heuristic made the wrong call.
+
+    Args:
+        function: Function name or address.
+        inline: True to force inlining, False to disable.
+
+    Returns:
+        Status string from the server.
+    """
+    if not function:
+        return "Error: function is required"
+    data = get_json(
+        "setFunctionInline",
+        {"function": function, "inline": "true" if inline else "false"},
+    )
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return (
+            f"Set {data.get('function')!r} inline_during_analysis="
+            f"{data.get('inline_during_analysis')} at {data.get('address')}"
+        )
+    return str(data)
+
+
+@mcp.tool()
 def get_var_uses(function: str, variable: str, il_level: str = "all") -> list:
     """
     Find every use site of a local variable inside a function.

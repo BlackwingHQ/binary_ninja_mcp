@@ -1985,6 +1985,105 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling addTag: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path in ("/setFunctionCanReturn", "/setFunctionInline"):
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("address")
+                    or params.get("function")
+                    or params.get("functionName")
+                    or params.get("name")
+                )
+                # Single bool parameter under varying aliases per endpoint.
+                if path == "/setFunctionCanReturn":
+                    raw = (
+                        params.get("canReturn")
+                        or params.get("can_return")
+                        or params.get("value")
+                    )
+                    arg_name = "canReturn"
+                else:
+                    raw = (
+                        params.get("inline")
+                        or params.get("inlineDuringAnalysis")
+                        or params.get("value")
+                    )
+                    arg_name = "inline"
+                if not fn_ident or raw is None:
+                    self._send_json_response(
+                        {
+                            "error": "Missing parameters",
+                            "help": (
+                                f"Required: function (or functionName/address) and "
+                                f"{arg_name} (true/false/1/0/yes/no)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                bool_value = str(raw).strip().lower() in (
+                    "true",
+                    "1",
+                    "yes",
+                    "on",
+                )
+                try:
+                    if path == "/setFunctionCanReturn":
+                        result = self.binary_ops.set_function_can_return(
+                            fn_ident, bool_value
+                        )
+                    else:
+                        result = self.binary_ops.set_function_inline(
+                            fn_ident, bool_value
+                        )
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling {path}: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
+            elif path == "/setFunctionReturnType":
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("address")
+                    or params.get("function")
+                    or params.get("functionName")
+                    or params.get("name")
+                )
+                type_str = (
+                    params.get("type")
+                    or params.get("returnType")
+                    or params.get("typeString")
+                )
+                if not fn_ident or not type_str:
+                    self._send_json_response(
+                        {
+                            "error": "Missing parameters",
+                            "help": (
+                                "Required: function (or functionName/address) and "
+                                "type (C-style, e.g. 'int', 'void', 'struct Foo *')."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    result = self.binary_ops.set_function_return_type(
+                        fn_ident, type_str
+                    )
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling setFunctionReturnType: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getFunctionMetadata":
                 fn_ident = (
                     params.get("functionAddress")
