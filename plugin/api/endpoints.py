@@ -919,7 +919,7 @@ class BinaryNinjaEndpoints:
     # display_as removed per request
 
     def patch_bytes(
-        self, address: str | int, data: str | bytes | list[int], save_to_file: bool = True
+        self, address: str | int, data: str | bytes | list[int], save_to_file: bool = False
     ) -> dict[str, Any]:
         """Patch bytes at a given address in the binary.
 
@@ -929,8 +929,8 @@ class BinaryNinjaEndpoints:
                 - Hex string: "90 90" or "9090" or "0x90 0x90"
                 - List of integers: [0x90, 0x90]
                 - Bytes object: b"\x90\x90"
-            save_to_file: If True (default), save the patched binary to disk and re-sign on macOS.
-                If False, only modify the BinaryView in memory without affecting the original file.
+            save_to_file: If True, save the patched binary to disk and re-sign on macOS.
+                Defaults to False, which only modifies the BinaryView in memory.
 
         Returns:
             Dictionary with status, address, original bytes, and patched bytes

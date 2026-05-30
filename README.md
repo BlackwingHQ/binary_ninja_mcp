@@ -222,7 +222,7 @@ The following table lists the available MCP functions for use:
 | `set_comment`                                                        | Set a comment at a specific address.                                                                         |
 | `set_function_comment`                                               | Set a comment for a function.                                                                                |
 | `set_function_prototype(name_or_address, prototype)`                 | Set a function's prototype by name or address.                                                               |
-| `patch_bytes(address, data, save_to_file)`                           | Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Address: hex (e.g., "0x401000") or decimal. Data: hex string (e.g., "90 90"). `save_to_file` (default True) saves to disk and re-signs on macOS. |
+| `patch_bytes(address, data, save_to_file)`                           | Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Address: hex (e.g., "0x401000") or decimal. Data: hex string (e.g., "90 90"). `save_to_file` defaults to false; pass true explicitly to save to disk and re-sign on macOS. |
 
 These are the list of HTTP endpoints that can be called:
 
@@ -284,7 +284,7 @@ These are the list of HTTP endpoints that can be called:
 - `/getConstantsReferencedBy?address=<addr>&function=<name|addr>`: Constants referenced by the instruction at `address`. `function` is optional — auto-resolved from the containing function when omitted.
 - `/getRegsReadBy?address=<addr>&function=<name|addr>`: Register names read by the instruction.
 - `/getRegsWrittenBy?address=<addr>&function=<name|addr>`: Register names written by the instruction.
-- `/patch` or `/patchBytes?address=<addr>&data=<hex>&save_to_file=<bool>`: Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Address: hex (e.g., "0x401000") or decimal. Data: hex string (e.g., "90 90"). `save_to_file` (default True) saves to disk and re-signs on macOS.
+- `POST /patch` or `POST /patchBytes`: Patch raw bytes at an address (byte-level, not assembly). Can patch entire instructions by providing their bytecode. Body fields: `address` (hex like "0x401000" or decimal), `data` (hex string like "90 90"), and optional `save_to_file`. `save_to_file` defaults to false; pass true explicitly to save to disk and re-sign on macOS. GET patch requests are rejected.
 - `/renameVariables`: Batch rename locals in a function. Parameters:
   - Function: one of `functionAddress`, `address`, `function`, `functionName`, or `name`.
   - Provide renames via one of:

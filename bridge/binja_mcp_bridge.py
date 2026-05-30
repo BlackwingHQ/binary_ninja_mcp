@@ -109,6 +109,38 @@ def get_json(endpoint: str, params: dict | None = None, timeout: float | None = 
         return {"error": f"Request failed: {e!s}"}
 
 
+def post_json(endpoint: str, payload: dict | None = None, timeout: float | None = 5):
+    """
+    Perform a POST and return parsed JSON.
+    - On 2xx: returns parsed JSON.
+    - On 4xx/5xx: attempts to parse JSON body and return it; if not JSON, returns {'error': 'Error <code>: <text>'}.
+    """
+    if payload is None:
+        payload = {}
+    url = f"{binja_server_url}/{endpoint}"
+    try:
+        if timeout is None:
+            response = requests.post(url, json=payload, headers=_auth_headers())
+        else:
+            response = requests.post(url, json=payload, headers=_auth_headers(), timeout=timeout)
+        response.encoding = "utf-8"
+        try:
+            data = response.json()
+        except Exception:
+            data = None
+        if response.ok:
+            return data
+        if isinstance(data, dict):
+            if "error" not in data:
+                data = {"error": str(data)}
+            data.setdefault("status", response.status_code)
+            return data
+        text = (response.text or "").strip()
+        return {"error": f"Error {response.status_code}: {text}"}
+    except Exception as e:
+        return {"error": f"Request failed: {e!s}"}
+
+
 def get_text(endpoint: str, params: dict | None = None, timeout: float | None = 5) -> str:
     """Perform a GET and return raw text (or an error string)."""
     if params is None:
@@ -2268,23 +2300,29 @@ def set_local_variable_type(function_address: str, variable_name: str, new_type:
 
 
 @mcp.tool()
-def patch_bytes(address: str, data: str, save_to_file: bool = True) -> str:
+def patch_bytes(address: str, data: str, save_to_file: bool = False) -> str:
     """
     Patch bytes at a given address in the binary.
     - address: Address to patch (hex string like "0x401000" or decimal)
     - data: Hex string of bytes to write (e.g., "90 90" or "9090" or "0x90 0x90")
-    - save_to_file: If True (default), save patched binary to disk and re-sign on macOS.
-                    If False, only modify in memory without affecting the original file.
+    - save_to_file: If True, save patched binary to disk and re-sign on macOS.
+                    Defaults to False, which only modifies the BinaryView in memory.
 
     Returns status with original and patched bytes.
-    On macOS, automatically re-signs the binary after patching to avoid execution errors.
+    On macOS, saving to disk automatically re-signs the binary after patching to avoid execution errors.
     """
     # Handle boolean type conversion (MCP may pass as string)
     if isinstance(save_to_file, str):
-        save_to_file = save_to_file.lower() not in ("false", "0", "no")
+        normalized = save_to_file.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            save_to_file = True
+        elif normalized in ("false", "0", "no", "off"):
+            save_to_file = False
+        else:
+            return "Error: save_to_file must be true/false/1/0/yes/no/on/off"
 
     params = {"address": address, "data": data, "save_to_file": save_to_file}
-    result = get_json("patch", params)
+    result = post_json("patch", params, timeout=None)
     if not result:
         return "Error: no response"
 
