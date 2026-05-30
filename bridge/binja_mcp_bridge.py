@@ -803,8 +803,7 @@ def define_user_symbol(address: str, name: str, kind: str = "data") -> str:
         return f"Error: {data['error']}"
     if isinstance(data, dict) and data.get("status") == "ok":
         return (
-            f"Defined {data.get('kind', kind)} symbol "
-            f"{data.get('name')!r} at {data.get('address')}"
+            f"Defined {data.get('kind', kind)} symbol {data.get('name')!r} at {data.get('address')}"
         )
     return str(data)
 
@@ -861,9 +860,7 @@ def define_user_data_var(address: str, type: str) -> str:
     if isinstance(data, dict) and data.get("error"):
         return f"Error: {data['error']}"
     if isinstance(data, dict) and data.get("status") == "ok":
-        return (
-            f"Defined data variable {data.get('type')!r} at {data.get('address')}"
-        )
+        return f"Defined data variable {data.get('type')!r} at {data.get('address')}"
     return str(data)
 
 
@@ -1005,10 +1002,7 @@ def demangle(name: str, abi: str = "auto") -> str:
     if isinstance(data, dict) and data.get("status") == "ok":
         type_str = data.get("type")
         type_suffix = f"   :: {type_str}" if type_str else ""
-        return (
-            f"[{data.get('abi')}] {data.get('mangled')} -> "
-            f"{data.get('demangled')}{type_suffix}"
-        )
+        return f"[{data.get('abi')}] {data.get('mangled')} -> {data.get('demangled')}{type_suffix}"
     return str(data)
 
 
@@ -1097,10 +1091,7 @@ def reanalyze_function(function: str) -> str:
     if isinstance(data, dict) and data.get("error"):
         return f"Error: {data['error']}"
     if isinstance(data, dict) and data.get("status") == "ok":
-        return (
-            f"Reanalysis triggered for {data.get('function')!r} "
-            f"at {data.get('address')}"
-        )
+        return f"Reanalysis triggered for {data.get('function')!r} at {data.get('address')}"
     return str(data)
 
 
@@ -1742,10 +1733,7 @@ def get_ssa_var_uses(
     uses = data.get("uses", []) or []
     if not uses:
         return ["(no uses)"]
-    return [
-        f"{u.get('address')}  [{u.get('il_type')}]  {u.get('expression')}"
-        for u in uses
-    ]
+    return [f"{u.get('address')}  [{u.get('il_type')}]  {u.get('expression')}" for u in uses]
 
 
 @mcp.tool()
@@ -1834,9 +1822,7 @@ def get_var_uses(function: str, variable: str, il_level: str = "all") -> list:
 
 
 @mcp.tool()
-def get_var_definitions(
-    function: str, variable: str, il_level: str = "all"
-) -> list:
+def get_var_definitions(function: str, variable: str, il_level: str = "all") -> list:
     """
     Find every definition (write) site of a local variable inside a function.
 

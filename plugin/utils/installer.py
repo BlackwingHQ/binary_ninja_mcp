@@ -71,9 +71,7 @@ def bn_plugins_folder() -> str | None:
     """
     home = os.path.expanduser("~")
     if sys.platform == "darwin":
-        return os.path.join(
-            home, "Library", "Application Support", "Binary Ninja", "plugins"
-        )
+        return os.path.join(home, "Library", "Application Support", "Binary Ninja", "plugins")
     if sys.platform == "linux":
         return os.path.join(home, ".binaryninja", "plugins")
     if sys.platform == "win32":
@@ -91,9 +89,7 @@ def ensure_venv() -> str:
     """
     req = requirements_file()
     try:
-        py = create_venv_with_system_python(
-            venv_dir(), req if os.path.exists(req) else None
-        )
+        py = create_venv_with_system_python(venv_dir(), req if os.path.exists(req) else None)
         return py if os.path.exists(py) else get_python_executable()
     except Exception:
         return get_python_executable()

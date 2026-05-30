@@ -22,7 +22,6 @@ from typing import Literal
 import binaryninja as bn
 from binaryninja.settings import Settings
 
-
 _session_approved: dict[str, set[str]] = {
     "patch": set(),
     "load": set(),
@@ -52,9 +51,7 @@ def _allowlist(action: str) -> set[str]:
     return {_normalize(p) for p in raw if p}
 
 
-def _prompt(
-    action: str, path: str, details: str
-) -> Literal["once", "session", "deny"]:
+def _prompt(action: str, path: str, details: str) -> Literal["once", "session", "deny"]:
     """Show the three-button modal on the UI thread and return the choice.
 
     Returns "deny" if no UI is available (headless run, no QApplication,
@@ -73,16 +70,10 @@ def _prompt(
                 box = QMessageBox()
                 box.setWindowTitle(f"MCP: Approve {action}?")
                 box.setIcon(QMessageBox.Warning)
-                box.setText(
-                    f"The MCP server is requesting a {action} operation."
-                )
+                box.setText(f"The MCP server is requesting a {action} operation.")
                 box.setInformativeText(f"File: {path}\n\n{details}")
-                once_btn = box.addButton(
-                    "Approve once", QMessageBox.AcceptRole
-                )
-                session_btn = box.addButton(
-                    "Approve for this session", QMessageBox.AcceptRole
-                )
+                once_btn = box.addButton("Approve once", QMessageBox.AcceptRole)
+                session_btn = box.addButton("Approve for this session", QMessageBox.AcceptRole)
                 deny_btn = box.addButton("Deny", QMessageBox.RejectRole)
                 box.setDefaultButton(deny_btn)
                 box.exec()
@@ -99,9 +90,7 @@ def _prompt(
 
         bn.execute_on_main_thread_and_wait(_show)
     except Exception as e:
-        bn.log_warn(
-            f"MCP approval prompt unavailable ({e}); denying by default"
-        )
+        bn.log_warn(f"MCP approval prompt unavailable ({e}); denying by default")
         return "deny"
     return result["choice"]  # type: ignore[return-value]
 

@@ -3,7 +3,7 @@ import re
 import subprocess
 import time
 import weakref
-from typing import Any
+from typing import Any, ClassVar
 
 import binaryninja as bn
 from binaryninja.enums import StructureVariant, TypeClass
@@ -221,7 +221,7 @@ class BinaryOperations:
                 vb_canon = vb
             entries.append((canonical_id, fn, bool(vb_canon is self._current_view)))
         # Sort by filename for stable ordering
-        entries.sort(key=lambda t: (t[1] or ""))
+        entries.sort(key=lambda t: t[1] or "")
         for cid, fn, active in entries:
             items.append({"id": cid, "filename": fn, "active": active})
         return items
@@ -3574,9 +3574,7 @@ class BinaryOperations:
 
         return out
 
-    def define_user_symbol(
-        self, address: int, name: str, kind: str = "data"
-    ) -> dict[str, Any]:
+    def define_user_symbol(self, address: int, name: str, kind: str = "data") -> dict[str, Any]:
         """Create a user symbol (label) at an address.
 
         Args:
@@ -3609,17 +3607,13 @@ class BinaryOperations:
             if func_type is not None:
                 kind_map["function"] = func_type
         if not kind_map:
-            raise RuntimeError(
-                "SymbolType enum unavailable in this Binary Ninja version"
-            )
+            raise RuntimeError("SymbolType enum unavailable in this Binary Ninja version")
 
         norm_kind = (kind or "data").strip().lower()
         sym_type = kind_map.get(norm_kind)
         if sym_type is None:
             known = ", ".join(sorted(kind_map))
-            raise ValueError(
-                f"Unknown symbol kind {kind!r}. Use one of: {known}"
-            )
+            raise ValueError(f"Unknown symbol kind {kind!r}. Use one of: {known}")
 
         try:
             symbol = bn.Symbol(sym_type, int(address), clean_name)
@@ -3672,9 +3666,7 @@ class BinaryOperations:
         }
 
     # ---------------- Function metadata ----------------
-    def get_function_metadata(
-        self, function_ident: str | int
-    ) -> dict[str, Any]:
+    def get_function_metadata(self, function_ident: str | int) -> dict[str, Any]:
         """Return a read-only bundle of diagnostic flags for a function.
 
         Useful when ``/decompile`` returns sparse or weird output and the
@@ -3796,9 +3788,7 @@ class BinaryOperations:
             "can_return": value,
         }
 
-    def set_function_return_type(
-        self, function_ident: str | int, type_str: str
-    ) -> dict[str, Any]:
+    def set_function_return_type(self, function_ident: str | int, type_str: str) -> dict[str, Any]:
         """Set a function's return type without rewriting the full prototype.
 
         Args:
@@ -3853,9 +3843,7 @@ class BinaryOperations:
             "return_type": str(parsed_type),
         }
 
-    def set_function_inline(
-        self, function_ident: str | int, inline: bool
-    ) -> dict[str, Any]:
+    def set_function_inline(self, function_ident: str | int, inline: bool) -> dict[str, Any]:
         """Force or un-force BN's inline-during-analysis behavior.
 
         Useful for small helper functions where inlining cleans up
@@ -3890,9 +3878,7 @@ class BinaryOperations:
         }
 
     # ---------------- Per-instruction data flow ----------------
-    def _resolve_func_and_addr(
-        self, function_ident: str | int, address: int
-    ) -> tuple[Any, int]:
+    def _resolve_func_and_addr(self, function_ident: str | int, address: int) -> tuple[Any, int]:
         """Resolve (function, int address) for per-instruction queries."""
         if not self._current_view:
             raise RuntimeError("No binary loaded")
@@ -3955,9 +3941,7 @@ class BinaryOperations:
                         "value": hex(int(value)) if value is not None else None,
                         "size": int(size) if size is not None else None,
                         "pointer": bool(pointer) if pointer is not None else None,
-                        "intermediate": (
-                            bool(intermediate) if intermediate is not None else None
-                        ),
+                        "intermediate": (bool(intermediate) if intermediate is not None else None),
                     }
                 )
             except Exception:
@@ -3971,9 +3955,7 @@ class BinaryOperations:
             "constants": constants,
         }
 
-    def get_regs_read_by(
-        self, function_ident: str | int, address: int
-    ) -> dict[str, Any]:
+    def get_regs_read_by(self, function_ident: str | int, address: int) -> dict[str, Any]:
         """Return register names read by the instruction at an address.
 
         Backed by ``Function.get_regs_read_by(addr)``.
@@ -3981,9 +3963,7 @@ class BinaryOperations:
         func, addr = self._resolve_func_and_addr(function_ident, address)
         getter = getattr(func, "get_regs_read_by", None)
         if not callable(getter):
-            raise RuntimeError(
-                "Function.get_regs_read_by is unavailable in this BN version"
-            )
+            raise RuntimeError("Function.get_regs_read_by is unavailable in this BN version")
         try:
             raw = list(getter(addr) or [])
         except Exception as e:
@@ -3997,9 +3977,7 @@ class BinaryOperations:
             "registers": names,
         }
 
-    def get_regs_written_by(
-        self, function_ident: str | int, address: int
-    ) -> dict[str, Any]:
+    def get_regs_written_by(self, function_ident: str | int, address: int) -> dict[str, Any]:
         """Return register names written by the instruction at an address.
 
         Backed by ``Function.get_regs_written_by(addr)``.
@@ -4007,9 +3985,7 @@ class BinaryOperations:
         func, addr = self._resolve_func_and_addr(function_ident, address)
         getter = getattr(func, "get_regs_written_by", None)
         if not callable(getter):
-            raise RuntimeError(
-                "Function.get_regs_written_by is unavailable in this BN version"
-            )
+            raise RuntimeError("Function.get_regs_written_by is unavailable in this BN version")
         try:
             raw = list(getter(addr) or [])
         except Exception as e:
@@ -4024,7 +4000,7 @@ class BinaryOperations:
         }
 
     # ---------------- Typed symbol queries ----------------
-    _SYMBOL_TYPE_ALIASES: dict[str, str] = {
+    _SYMBOL_TYPE_ALIASES: ClassVar[dict[str, str]] = {
         "function": "FunctionSymbol",
         "data": "DataSymbol",
         "import": "ImportedFunctionSymbol",
@@ -4090,9 +4066,7 @@ class BinaryOperations:
 
         getter = getattr(bv, "get_symbols_of_type", None)
         if not callable(getter):
-            raise RuntimeError(
-                "BinaryView.get_symbols_of_type is unavailable in this BN version"
-            )
+            raise RuntimeError("BinaryView.get_symbols_of_type is unavailable in this BN version")
         try:
             raw_symbols = list(getter(sym_type) or [])
         except Exception as e:
@@ -4140,9 +4114,7 @@ class BinaryOperations:
         }
 
     # ---------------- SSA data flow ----------------
-    def _serialize_il_instr(
-        self, instr: Any, kind: str
-    ) -> dict[str, Any]:
+    def _serialize_il_instr(self, instr: Any, kind: str) -> dict[str, Any]:
         """Render a HLIL/MLIL instruction as a JSON-friendly dict."""
         try:
             addr_attr = getattr(instr, "address", None)
@@ -4199,9 +4171,7 @@ class BinaryOperations:
         try:
             ssa_var = ssa_ctor(var, int(version))
         except Exception as e:
-            raise ValueError(
-                f"Failed to construct SSAVariable for {var_name!r} v{version}: {e!s}"
-            )
+            raise ValueError(f"Failed to construct SSAVariable for {var_name!r} v{version}: {e!s}")
 
         getter = getattr(il_func, "get_ssa_var_uses", None)
         if not callable(getter):
@@ -4249,9 +4219,7 @@ class BinaryOperations:
         try:
             ssa_var = ssa_ctor(var, int(version))
         except Exception as e:
-            raise ValueError(
-                f"Failed to construct SSAVariable for {var_name!r} v{version}: {e!s}"
-            )
+            raise ValueError(f"Failed to construct SSAVariable for {var_name!r} v{version}: {e!s}")
 
         getter = getattr(il_func, "get_ssa_var_definition", None)
         if not callable(getter):
@@ -4262,9 +4230,7 @@ class BinaryOperations:
             raw = getter(ssa_var)
         except Exception as e:
             raise ValueError(f"Failed to get SSA definition: {e!s}")
-        definition = (
-            self._serialize_il_instr(raw, kind="definition") if raw is not None else None
-        )
+        definition = self._serialize_il_instr(raw, kind="definition") if raw is not None else None
         return {
             "function": getattr(func, "name", None),
             "function_address": hex(int(getattr(func, "start", 0))),
@@ -4330,9 +4296,7 @@ class BinaryOperations:
                 continue
         return out
 
-    def _resolve_func_and_var(
-        self, function_ident: str | int, var_name: str
-    ) -> tuple[Any, Any]:
+    def _resolve_func_and_var(self, function_ident: str | int, var_name: str) -> tuple[Any, Any]:
         """Resolve (function, variable) or raise ValueError with a clear msg."""
         if not self._current_view:
             raise RuntimeError("No binary loaded")
@@ -4350,9 +4314,7 @@ class BinaryOperations:
         except Exception:
             var = None
         if var is None:
-            raise ValueError(
-                f"Variable {clean_var!r} not found in {func.name}"
-            )
+            raise ValueError(f"Variable {clean_var!r} not found in {func.name}")
         return func, var
 
     def get_var_uses(
@@ -4460,17 +4422,11 @@ class BinaryOperations:
         if function_ident in (None, ""):
             try:
                 container_getter = getattr(bv, "get_functions_containing", None)
-                fns = (
-                    list(container_getter(addr) or [])
-                    if callable(container_getter)
-                    else []
-                )
+                fns = list(container_getter(addr) or []) if callable(container_getter) else []
             except Exception:
                 fns = []
             if not fns:
-                raise ValueError(
-                    f"No function contains {hex(addr)}; pass function explicitly"
-                )
+                raise ValueError(f"No function contains {hex(addr)}; pass function explicitly")
             func = fns[0]
         else:
             func = self.get_function_by_name_or_address(function_ident)
@@ -4502,16 +4458,11 @@ class BinaryOperations:
             raise ValueError(f"Failed to enumerate MLIL at {hex(addr)}: {e!s}")
 
         if call_instr is None:
-            raise ValueError(
-                f"No call instruction at {hex(addr)} in "
-                f"{getattr(func, 'name', '?')}"
-            )
+            raise ValueError(f"No call instruction at {hex(addr)} in {getattr(func, 'name', '?')}")
 
         params = getattr(call_instr, "params", None)
         if params is None:
-            raise ValueError(
-                f"Call at {hex(addr)} has no params attribute on its MLIL instruction"
-            )
+            raise ValueError(f"Call at {hex(addr)} has no params attribute on its MLIL instruction")
         try:
             params_list = list(params)
         except Exception:
@@ -4598,9 +4549,7 @@ class BinaryOperations:
         try:
             tag_types = getattr(bv, "tag_types", None) or {}
             # tag_types is typically a dict {name: TagType}; iterate values.
-            iterable = (
-                tag_types.values() if hasattr(tag_types, "values") else tag_types
-            )
+            iterable = tag_types.values() if hasattr(tag_types, "values") else tag_types
             for tt in iterable:
                 try:
                     out.append(
@@ -4693,9 +4642,7 @@ class BinaryOperations:
             try:
                 tt = bv.create_tag_type(name, "🏷")
             except Exception as e:
-                raise ValueError(
-                    f"Failed to auto-create tag type {name!r}: {e!s}"
-                )
+                raise ValueError(f"Failed to auto-create tag type {name!r}: {e!s}")
         if tt is None:
             raise ValueError(f"Tag type {name!r} not found")
         return tt
@@ -4736,9 +4683,7 @@ class BinaryOperations:
         payload = data or ""
         norm_kind = (kind or "auto").strip().lower()
         if norm_kind not in ("auto", "address", "function", "data"):
-            raise ValueError(
-                f"Unknown tag kind {kind!r}. Use auto, address, function, or data."
-            )
+            raise ValueError(f"Unknown tag kind {kind!r}. Use auto, address, function, or data.")
 
         # Locate any function that contains this address.
         containing_funcs: list[Any] = []
@@ -4764,15 +4709,11 @@ class BinaryOperations:
             if norm_kind == "data":
                 creator = getattr(bv, "create_user_data_tag", None)
                 if not callable(creator):
-                    raise ValueError(
-                        "create_user_data_tag unavailable in this BN version"
-                    )
+                    raise ValueError("create_user_data_tag unavailable in this BN version")
                 creator(addr, tt, payload, False)
             elif norm_kind == "function":
                 if not containing_funcs:
-                    raise ValueError(
-                        f"No function at {hex(addr)} for kind='function'"
-                    )
+                    raise ValueError(f"No function at {hex(addr)} for kind='function'")
                 func = containing_funcs[0]
                 creator = getattr(func, "create_user_function_tag", None)
                 if not callable(creator):
@@ -4847,9 +4788,7 @@ class BinaryOperations:
                     a_getter = getattr(func, "get_address_tags_at", None)
                     if callable(a_getter):
                         for tag in a_getter(addr) or []:
-                            address_tags.append(
-                                self._serialize_tag(tag, "address")
-                            )
+                            address_tags.append(self._serialize_tag(tag, "address"))
                 except Exception:
                     pass
                 try:
@@ -4859,9 +4798,7 @@ class BinaryOperations:
                         f_tags = getattr(func, "tags", None)
                     if f_tags:
                         for tag in list(f_tags):
-                            function_tags.append(
-                                self._serialize_tag(tag, "function")
-                            )
+                            function_tags.append(self._serialize_tag(tag, "function"))
                 except Exception:
                     pass
         except Exception:
@@ -4908,9 +4845,7 @@ class BinaryOperations:
         bv = self._current_view
         undo_call = getattr(bv, "undo", None)
         if not callable(undo_call):
-            raise RuntimeError(
-                "BinaryView.undo is unavailable in this Binary Ninja version"
-            )
+            raise RuntimeError("BinaryView.undo is unavailable in this Binary Ninja version")
         try:
             raw = undo_call()
         except Exception as e:
@@ -4938,9 +4873,7 @@ class BinaryOperations:
         bv = self._current_view
         redo_call = getattr(bv, "redo", None)
         if not callable(redo_call):
-            raise RuntimeError(
-                "BinaryView.redo is unavailable in this Binary Ninja version"
-            )
+            raise RuntimeError("BinaryView.redo is unavailable in this Binary Ninja version")
         try:
             raw = redo_call()
         except Exception as e:
@@ -4955,9 +4888,7 @@ class BinaryOperations:
         )
         return result
 
-    def reanalyze_function(
-        self, function_ident: str | int
-    ) -> dict[str, Any]:
+    def reanalyze_function(self, function_ident: str | int) -> dict[str, Any]:
         """Trigger reanalysis of a single function.
 
         Faster than ``update_analysis_and_wait`` when only one function
@@ -4985,9 +4916,7 @@ class BinaryOperations:
 
         reanalyze = getattr(func, "reanalyze", None)
         if not callable(reanalyze):
-            raise RuntimeError(
-                "Function.reanalyze is unavailable in this Binary Ninja version"
-            )
+            raise RuntimeError("Function.reanalyze is unavailable in this Binary Ninja version")
 
         try:
             # UserFunctionUpdate when available — it's the right update type
@@ -5053,9 +4982,7 @@ class BinaryOperations:
                     v = getattr(ai, k, None)
                     if v is None:
                         continue
-                    info[k] = (
-                        v if isinstance(v, (int, float, str, bool)) else str(v)
-                    )
+                    info[k] = v if isinstance(v, (int, float, str, bool)) else str(v)
         except Exception:
             info = {}
 
@@ -5065,9 +4992,7 @@ class BinaryOperations:
             "analysis_info": info or None,
         }
 
-    def define_user_data_var(
-        self, address: int, type_str: str
-    ) -> dict[str, Any]:
+    def define_user_data_var(self, address: int, type_str: str) -> dict[str, Any]:
         """Type a global at an address as a user data variable.
 
         Args:
@@ -5102,9 +5027,7 @@ class BinaryOperations:
         try:
             bv.define_user_data_var(addr, parsed_type)
         except Exception as e:
-            raise ValueError(
-                f"Failed to define data variable at {hex(addr)}: {e!s}"
-            )
+            raise ValueError(f"Failed to define data variable at {hex(addr)}: {e!s}")
 
         return {
             "status": "ok",
@@ -5112,9 +5035,7 @@ class BinaryOperations:
             "type": str(parsed_type),
         }
 
-    def read_int(
-        self, address: int, size: int, signed: bool = False
-    ) -> dict[str, Any]:
+    def read_int(self, address: int, size: int, signed: bool = False) -> dict[str, Any]:
         """Read ``size`` bytes at ``address`` as an integer.
 
         Args:
@@ -5136,18 +5057,14 @@ class BinaryOperations:
         bv = self._current_view
         reader = getattr(bv, "read_int", None)
         if not callable(reader):
-            raise RuntimeError(
-                "BinaryView.read_int is unavailable in this Binary Ninja version"
-            )
+            raise RuntimeError("BinaryView.read_int is unavailable in this Binary Ninja version")
         addr = int(address)
         try:
             value = reader(addr, int(size), bool(signed))
         except Exception as e:
             raise ValueError(f"Failed to read int at {hex(addr)}: {e!s}")
         if value is None:
-            raise ValueError(
-                f"Read at {hex(addr)} returned None (uninitialized memory?)"
-            )
+            raise ValueError(f"Read at {hex(addr)} returned None (uninitialized memory?)")
         return {
             "address": hex(addr),
             "size": int(size),
@@ -5178,9 +5095,7 @@ class BinaryOperations:
         except Exception as e:
             raise ValueError(f"Failed to read pointer at {hex(addr)}: {e!s}")
         if value is None:
-            raise ValueError(
-                f"Pointer read at {hex(addr)} returned None (uninitialized memory?)"
-            )
+            raise ValueError(f"Pointer read at {hex(addr)} returned None (uninitialized memory?)")
         value_int = int(value)
         points_to: str | None = None
         try:
@@ -5231,9 +5146,7 @@ class BinaryOperations:
             raise RuntimeError("TypeLibrary unavailable in this BN version")
         loader = getattr(tl_class, "load_from_file", None)
         if not callable(loader):
-            raise RuntimeError(
-                "TypeLibrary.load_from_file unavailable in this BN version"
-            )
+            raise RuntimeError("TypeLibrary.load_from_file unavailable in this BN version")
 
         try:
             library = loader(clean_path)
@@ -5244,9 +5157,7 @@ class BinaryOperations:
 
         attach = getattr(bv, "add_type_library", None)
         if not callable(attach):
-            raise RuntimeError(
-                "BinaryView.add_type_library unavailable in this BN version"
-            )
+            raise RuntimeError("BinaryView.add_type_library unavailable in this BN version")
         try:
             attach(library)
         except Exception as e:
@@ -5255,13 +5166,15 @@ class BinaryOperations:
         return {
             "status": "ok",
             "path": clean_path,
-            "name": str(getattr(library, "name", None)) if getattr(library, "name", None) is not None else None,
-            "arch": str(getattr(library, "arch", None)) if getattr(library, "arch", None) is not None else None,
+            "name": str(getattr(library, "name", None))
+            if getattr(library, "name", None) is not None
+            else None,
+            "arch": str(getattr(library, "arch", None))
+            if getattr(library, "arch", None) is not None
+            else None,
         }
 
-    def demangle(
-        self, name: str, abi: str = "auto"
-    ) -> dict[str, Any]:
+    def demangle(self, name: str, abi: str = "auto") -> dict[str, Any]:
         """Demangle a C++ symbol name to a human-readable form.
 
         Tries the Itanium (``gnu3``) and Microsoft (``ms``) demanglers,
@@ -5292,9 +5205,7 @@ class BinaryOperations:
             raise ValueError("Empty mangled name")
 
         bv = self._current_view
-        arch = getattr(bv, "arch", None) or getattr(
-            getattr(bv, "platform", None), "arch", None
-        )
+        arch = getattr(bv, "arch", None) or getattr(getattr(bv, "platform", None), "arch", None)
 
         demangle_mod = getattr(bn, "demangle", None)
         if demangle_mod is None:
@@ -5309,9 +5220,7 @@ class BinaryOperations:
         if norm_abi in ("auto", "ms", "msvc") and callable(ms):
             attempts.append(("ms", ms))
         if not attempts:
-            raise ValueError(
-                f"Unknown ABI {abi!r} or no matching demanglers exposed by BN"
-            )
+            raise ValueError(f"Unknown ABI {abi!r} or no matching demanglers exposed by BN")
 
         last_error: Exception | None = None
         for attempt_abi, fn in attempts:
@@ -5352,9 +5261,7 @@ class BinaryOperations:
 
         if last_error is not None:
             raise ValueError(f"Demangling failed: {last_error!s}")
-        raise ValueError(
-            f"Demangling failed for {clean_name!r} — no demangler accepted it"
-        )
+        raise ValueError(f"Demangling failed for {clean_name!r} — no demangler accepted it")
 
     def get_data_var_at(self, address: int) -> dict[str, Any]:
         """Read the data variable at an address.
@@ -5447,9 +5354,7 @@ class BinaryOperations:
         try:
             bv.undefine_user_data_var(addr)
         except Exception as e:
-            raise ValueError(
-                f"Failed to undefine data variable at {hex(addr)}: {e!s}"
-            )
+            raise ValueError(f"Failed to undefine data variable at {hex(addr)}: {e!s}")
 
         return {
             "status": "ok",
@@ -5486,9 +5391,7 @@ class BinaryOperations:
         found = False
         try:
             container = getattr(bv, "user_type_container", None)
-            types_attr = (
-                getattr(container, "types", None) if container is not None else None
-            )
+            types_attr = getattr(container, "types", None) if container is not None else None
             if types_attr:
                 for type_id in list(types_attr.keys()):
                     entry = types_attr[type_id]
@@ -5511,9 +5414,7 @@ class BinaryOperations:
             found = False
 
         if not found:
-            raise ValueError(
-                f"Type {clean_name!r} is not defined as a user type"
-            )
+            raise ValueError(f"Type {clean_name!r} is not defined as a user type")
 
         try:
             bv.undefine_user_type(clean_name)
@@ -5647,9 +5548,7 @@ class BinaryOperations:
                 extra_kwargs["flags"] = flag
 
         advance = max(len(text.encode("utf-8", errors="ignore")), 1)
-        return self._scan(
-            find_next, text, start, end, limit, advance, extra_kwargs
-        )
+        return self._scan(find_next, text, start, end, limit, advance, extra_kwargs)
 
     def find_constant(
         self,
@@ -5685,9 +5584,7 @@ class BinaryOperations:
             )
         return self._scan(find_next, int(value), start, end, limit, advance=1)
 
-    def parse_expression(
-        self, expr: str, here: int = 0
-    ) -> dict[str, Any]:
+    def parse_expression(self, expr: str, here: int = 0) -> dict[str, Any]:
         """Evaluate a Binary Ninja expression string to an address.
 
         BN's expression language accepts symbol names, arithmetic
@@ -5730,9 +5627,7 @@ class BinaryOperations:
                 # Some BN versions accept only the expression argument.
                 raw = parse(clean_expr)
         except Exception as e:
-            raise ValueError(
-                f"Failed to parse expression {clean_expr!r}: {e!s}"
-            )
+            raise ValueError(f"Failed to parse expression {clean_expr!r}: {e!s}")
 
         # BN occasionally returned ``Tuple[int, str]`` in older releases;
         # the str part carries an error message when parsing fails.
@@ -5746,14 +5641,10 @@ class BinaryOperations:
             try:
                 addr_val = int(raw)
             except Exception as e:
-                raise ValueError(
-                    f"Unexpected parse_expression result {raw!r}: {e!s}"
-                )
+                raise ValueError(f"Unexpected parse_expression result {raw!r}: {e!s}")
 
         if addr_val is None:
-            raise ValueError(
-                f"Expression {clean_expr!r} did not produce an address"
-            )
+            raise ValueError(f"Expression {clean_expr!r} did not produce an address")
 
         return {
             "status": "ok",

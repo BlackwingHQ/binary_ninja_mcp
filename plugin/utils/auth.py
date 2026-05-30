@@ -78,7 +78,7 @@ def matches(authorization_header: str | None) -> bool:
         return False
     if not authorization_header.startswith(_BEARER_PREFIX):
         return False
-    presented = authorization_header[len(_BEARER_PREFIX):].strip()
+    presented = authorization_header[len(_BEARER_PREFIX) :].strip()
     if not presented:
         return False
     return hmac.compare_digest(presented, expected)

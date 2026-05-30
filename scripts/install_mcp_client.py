@@ -80,9 +80,7 @@ def _resolve_target(client: str | None, config_file: str | None) -> tuple[str, s
     Exits via SystemExit on bad input.
     """
     if bool(client) == bool(config_file):
-        raise SystemExit(
-            "Specify exactly one of --client <name> or --config-file <path>."
-        )
+        raise SystemExit("Specify exactly one of --client <name> or --config-file <path>.")
 
     if config_file:
         return ("custom", os.path.abspath(os.path.expanduser(config_file)))
