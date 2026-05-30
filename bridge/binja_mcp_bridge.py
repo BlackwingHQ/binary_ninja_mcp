@@ -1137,6 +1137,108 @@ def _format_tag(tag: dict) -> str:
     return f"{base}: {data}" if data else base
 
 
+@mcp.tool()
+def get_constants_referenced_by(address: str, function: str = "") -> list:
+    """
+    List immediate constants referenced by an instruction.
+
+    Use to answer "what magic values does this instruction touch?" without
+    parsing disassembly text. Composes with `find_constant` for tracing
+    where a value flows.
+
+    Args:
+        address: Instruction address (hex like "0x401080" or decimal).
+        function: Optional function name or address. If omitted, the
+            server auto-resolves the containing function.
+
+    Returns:
+        List of "<value>  size=<n>  pointer=<bool>  intermediate=<bool>"
+        lines, or "(no constants)" / an error message.
+    """
+    if not address:
+        return ["Error: address is required"]
+    params: dict = {"address": address}
+    if function:
+        params["function"] = function
+    data = get_json("getConstantsReferencedBy", params)
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    consts = data.get("constants", []) or []
+    if not consts:
+        return ["(no constants)"]
+    return [
+        f"{c.get('value')}  size={c.get('size')}  "
+        f"pointer={c.get('pointer')}  intermediate={c.get('intermediate')}"
+        for c in consts
+    ]
+
+
+@mcp.tool()
+def get_regs_read_by(address: str, function: str = "") -> list:
+    """
+    List registers read by an instruction.
+
+    Args:
+        address: Instruction address (hex like "0x401080" or decimal).
+        function: Optional function name or address. If omitted, the
+            server auto-resolves the containing function.
+
+    Returns:
+        List of register name strings, or "(no registers)" / an error message.
+    """
+    if not address:
+        return ["Error: address is required"]
+    params: dict = {"address": address}
+    if function:
+        params["function"] = function
+    data = get_json("getRegsReadBy", params)
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    regs = data.get("registers", []) or []
+    if not regs:
+        return ["(no registers)"]
+    return list(regs)
+
+
+@mcp.tool()
+def get_regs_written_by(address: str, function: str = "") -> list:
+    """
+    List registers written by an instruction.
+
+    Args:
+        address: Instruction address (hex like "0x401080" or decimal).
+        function: Optional function name or address. If omitted, the
+            server auto-resolves the containing function.
+
+    Returns:
+        List of register name strings, or "(no registers)" / an error message.
+    """
+    if not address:
+        return ["Error: address is required"]
+    params: dict = {"address": address}
+    if function:
+        params["function"] = function
+    data = get_json("getRegsWrittenBy", params)
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    regs = data.get("registers", []) or []
+    if not regs:
+        return ["(no registers)"]
+    return list(regs)
+
+
 def _format_var_ref(ref: dict) -> str:
     addr = ref.get("address") or "?"
     il_type = ref.get("il_type") or "?"

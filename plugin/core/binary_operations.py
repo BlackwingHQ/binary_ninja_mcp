@@ -3889,6 +3889,140 @@ class BinaryOperations:
             "inline_during_analysis": value,
         }
 
+    # ---------------- Per-instruction data flow ----------------
+    def _resolve_func_and_addr(
+        self, function_ident: str | int, address: int
+    ) -> tuple[Any, int]:
+        """Resolve (function, int address) for per-instruction queries."""
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        func = self.get_function_by_name_or_address(function_ident)
+        if func is None:
+            raise ValueError(f"Function not found: {function_ident!r}")
+        return func, int(address)
+
+    @staticmethod
+    def _reg_name(reg: Any) -> str:
+        """Extract a register name from whatever BN returns."""
+        if isinstance(reg, str):
+            return reg
+        name = getattr(reg, "name", None)
+        if isinstance(name, str):
+            return name
+        return str(reg)
+
+    def get_constants_referenced_by(
+        self, function_ident: str | int, address: int
+    ) -> dict[str, Any]:
+        """Return immediate constants referenced by the instruction at an address.
+
+        Backed by ``Function.get_constants_referenced_by(addr)``. Each
+        returned ``ConstantReference`` carries the integer value, byte
+        size, and BN's ``pointer`` / ``intermediate`` flags.
+
+        Args:
+            function_ident: Function name or address.
+            address: Instruction address inside that function.
+
+        Returns:
+            Dict with function, address, count, and a ``constants`` list
+            of ``{value, size, pointer, intermediate}`` entries.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function can't be found or the BN call fails.
+        """
+        func, addr = self._resolve_func_and_addr(function_ident, address)
+        getter = getattr(func, "get_constants_referenced_by", None)
+        if not callable(getter):
+            raise RuntimeError(
+                "Function.get_constants_referenced_by is unavailable in this BN version"
+            )
+        try:
+            raw = list(getter(addr) or [])
+        except Exception as e:
+            raise ValueError(f"Failed to get constants: {e!s}")
+
+        constants: list[dict[str, Any]] = []
+        for c in raw:
+            try:
+                value = getattr(c, "value", None)
+                size = getattr(c, "size", None)
+                pointer = getattr(c, "pointer", None)
+                intermediate = getattr(c, "intermediate", None)
+                constants.append(
+                    {
+                        "value": hex(int(value)) if value is not None else None,
+                        "size": int(size) if size is not None else None,
+                        "pointer": bool(pointer) if pointer is not None else None,
+                        "intermediate": (
+                            bool(intermediate) if intermediate is not None else None
+                        ),
+                    }
+                )
+            except Exception:
+                continue
+
+        return {
+            "function": getattr(func, "name", None),
+            "function_address": hex(int(getattr(func, "start", 0))),
+            "address": hex(addr),
+            "count": len(constants),
+            "constants": constants,
+        }
+
+    def get_regs_read_by(
+        self, function_ident: str | int, address: int
+    ) -> dict[str, Any]:
+        """Return register names read by the instruction at an address.
+
+        Backed by ``Function.get_regs_read_by(addr)``.
+        """
+        func, addr = self._resolve_func_and_addr(function_ident, address)
+        getter = getattr(func, "get_regs_read_by", None)
+        if not callable(getter):
+            raise RuntimeError(
+                "Function.get_regs_read_by is unavailable in this BN version"
+            )
+        try:
+            raw = list(getter(addr) or [])
+        except Exception as e:
+            raise ValueError(f"Failed to get regs read: {e!s}")
+        names = [self._reg_name(r) for r in raw]
+        return {
+            "function": getattr(func, "name", None),
+            "function_address": hex(int(getattr(func, "start", 0))),
+            "address": hex(addr),
+            "count": len(names),
+            "registers": names,
+        }
+
+    def get_regs_written_by(
+        self, function_ident: str | int, address: int
+    ) -> dict[str, Any]:
+        """Return register names written by the instruction at an address.
+
+        Backed by ``Function.get_regs_written_by(addr)``.
+        """
+        func, addr = self._resolve_func_and_addr(function_ident, address)
+        getter = getattr(func, "get_regs_written_by", None)
+        if not callable(getter):
+            raise RuntimeError(
+                "Function.get_regs_written_by is unavailable in this BN version"
+            )
+        try:
+            raw = list(getter(addr) or [])
+        except Exception as e:
+            raise ValueError(f"Failed to get regs written: {e!s}")
+        names = [self._reg_name(r) for r in raw]
+        return {
+            "function": getattr(func, "name", None),
+            "function_address": hex(int(getattr(func, "start", 0))),
+            "address": hex(addr),
+            "count": len(names),
+            "registers": names,
+        }
+
     # ---------------- Variable data flow ----------------
     def _serialize_var_refs(
         self,

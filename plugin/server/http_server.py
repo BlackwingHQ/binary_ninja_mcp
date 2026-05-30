@@ -2113,6 +2113,98 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     bn.log_error(f"Error handling getFunctionMetadata: {e}")
                     self._send_json_response({"error": str(e)}, 500)
 
+            elif path in (
+                "/getConstantsReferencedBy",
+                "/getRegsReadBy",
+                "/getRegsWrittenBy",
+            ):
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("function")
+                    or params.get("functionName")
+                )
+                address_str = (
+                    params.get("address") or params.get("addr") or params.get("at")
+                )
+                if not address_str:
+                    self._send_json_response(
+                        {
+                            "error": "Missing address parameter",
+                            "help": (
+                                "Required: address (instruction address inside the function), "
+                                "function (or functionName)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    addr_int = (
+                        int(address_str, 16)
+                        if isinstance(address_str, str)
+                        and (
+                            address_str.startswith("0x")
+                            or address_str.startswith("0X")
+                            or any(c in "abcdefABCDEF" for c in address_str)
+                        )
+                        else int(address_str)
+                    )
+                except ValueError:
+                    self._send_json_response(
+                        {"error": "Invalid address format"}, 400
+                    )
+                    return
+                # If the caller didn't name a function, auto-resolve via the
+                # containing function so the agent doesn't have to wire that up
+                # in two steps for the common case.
+                if not fn_ident:
+                    try:
+                        bv = self.binary_ops.current_view
+                        fns = (
+                            list(bv.get_functions_containing(addr_int) or [])
+                            if bv is not None
+                            else []
+                        )
+                        if fns:
+                            fn_ident = int(getattr(fns[0], "start", 0))
+                    except Exception:
+                        fn_ident = None
+                if not fn_ident:
+                    self._send_json_response(
+                        {
+                            "error": "Missing function identifier",
+                            "help": (
+                                "Pass function (name or address), or use an address "
+                                "that lies inside a known function."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    if path == "/getConstantsReferencedBy":
+                        result = self.binary_ops.get_constants_referenced_by(
+                            fn_ident, addr_int
+                        )
+                    elif path == "/getRegsReadBy":
+                        result = self.binary_ops.get_regs_read_by(
+                            fn_ident, addr_int
+                        )
+                    else:
+                        result = self.binary_ops.get_regs_written_by(
+                            fn_ident, addr_int
+                        )
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling {path}: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getVarUses" or path == "/getVarDefinitions":
                 fn_ident = (
                     params.get("functionAddress")
