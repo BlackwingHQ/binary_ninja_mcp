@@ -153,6 +153,22 @@ def safe_post(endpoint: str, data: dict | str) -> str:
         return f"Request failed: {e!s}"
 
 
+def safe_delete(endpoint: str, params: dict | None = None) -> str:
+    try:
+        response = requests.delete(
+            f"{binja_server_url}/{endpoint}",
+            params=params or {},
+            headers=_auth_headers(),
+            timeout=5,
+        )
+        response.encoding = "utf-8"
+        if response.ok:
+            return response.text.strip()
+        return f"Error {response.status_code}: {response.text.strip()}"
+    except Exception as e:
+        return f"Request failed: {e!s}"
+
+
 @mcp.tool()
 def list_methods(offset: int = 0, limit: int = 100) -> list:
     """
@@ -1931,7 +1947,7 @@ def delete_comment(address: str) -> str:
     """
     Delete the comment at a specific address.
     """
-    return safe_post("comment", {"address": address, "_method": "DELETE"})
+    return safe_delete("comment", {"address": address})
 
 
 @mcp.tool()
@@ -1939,7 +1955,7 @@ def delete_function_comment(function_name: str) -> str:
     """
     Delete the comment for a function.
     """
-    return safe_post("comment/function", {"name": function_name, "_method": "DELETE"})
+    return safe_delete("comment/function", {"name": function_name})
 
 
 @mcp.tool()

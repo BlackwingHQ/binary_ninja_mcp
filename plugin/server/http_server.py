@@ -304,6 +304,79 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         self._send_json_response({"error": "User denied load approval"}, 403)
         return False
 
+    def _delete_comment(self, params: dict[str, Any]):
+        address = params.get("address")
+        if not address:
+            self._send_json_response(
+                {
+                    "error": "Missing address parameter",
+                    "help": "Required parameter: address",
+                    "received": params,
+                },
+                400,
+            )
+            return
+
+        try:
+            address_int = int(address, 16) if isinstance(address, str) else int(address)
+            success = self.binary_ops.delete_comment(address_int)
+            if success:
+                self._send_json_response(
+                    {
+                        "success": True,
+                        "message": f"Successfully deleted comment at {hex(address_int)}",
+                    }
+                )
+            else:
+                self._send_json_response(
+                    {
+                        "error": "Failed to delete comment",
+                        "message": "The comment could not be deleted at the specified address.",
+                    },
+                    500,
+                )
+        except ValueError:
+            self._send_json_response({"error": "Invalid address format"}, 400)
+
+    def _delete_function_comment(self, params: dict[str, Any]):
+        function_name = params.get("name") or params.get("functionName")
+        if not function_name:
+            self._send_json_response(
+                {
+                    "error": "Missing function name parameter",
+                    "help": "Required parameter: name (or functionName)",
+                    "received": params,
+                },
+                400,
+            )
+            return
+
+        success = self.binary_ops.delete_function_comment(function_name)
+        if success:
+            self._send_json_response(
+                {
+                    "success": True,
+                    "message": f"Successfully deleted comment for function {function_name}",
+                }
+            )
+        else:
+            self._send_json_response(
+                {
+                    "error": "Failed to delete function comment",
+                    "message": "The comment could not be deleted for the specified function.",
+                },
+                500,
+            )
+
+    def _handle_delete_request(self, path: str, params: dict[str, Any]) -> bool:
+        if path == "/comment":
+            self._delete_comment(params)
+            return True
+        if path == "/comment/function":
+            self._delete_function_comment(params)
+            return True
+        return False
+
     def do_GET(self):
         try:
             if not self._check_auth():
@@ -3112,6 +3185,35 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 500,
             )
 
+    def do_DELETE(self):
+        try:
+            if not self._check_auth():
+                return
+            if not self._check_binary_loaded():
+                return
+
+            params = self._parse_query_params()
+            if int(self.headers.get("Content-Length", 0)):
+                params.update(self._parse_post_params())
+            path = urllib.parse.urlparse(self.path).path
+
+            bn.log_info(f"DELETE {path} with params: {params}")
+
+            if self._handle_delete_request(path, params):
+                return
+
+            self._send_json_response(
+                {
+                    "error": "Unsupported DELETE endpoint",
+                    "path": path,
+                    "supported": ["/comment", "/comment/function"],
+                },
+                404,
+            )
+        except Exception as e:
+            bn.log_error(f"DELETE request error: {e}")
+            self._send_json_response({"error": str(e)}, 500)
+
     def do_POST(self):
         try:
             if not self._check_auth():
@@ -3123,6 +3225,20 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             path = urllib.parse.urlparse(self.path).path
 
             bn.log_info(f"POST {path} with params: {params}")
+
+            method_override = str(params.get("_method", "")).strip().upper()
+            if method_override:
+                if method_override == "DELETE" and self._handle_delete_request(path, params):
+                    return
+                self._send_json_response(
+                    {
+                        "error": "Unsupported method override",
+                        "method": method_override,
+                        "path": path,
+                    },
+                    405,
+                )
+                return
 
             if path == "/load":
                 filepath = params.get("filepath")
