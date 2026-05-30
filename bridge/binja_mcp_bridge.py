@@ -868,6 +868,151 @@ def define_user_data_var(address: str, type: str) -> str:
 
 
 @mcp.tool()
+def read_int(address: str, size: int, signed: bool = False) -> str:
+    """
+    Read a typed integer at an address.
+
+    Use as a primitive for any analysis that needs raw values without
+    dumping bytes: inline immediates, length prefixes, header fields,
+    structure members. Cheaper and more direct than `/hexdump` + parse.
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+        size: 1, 2, 4, or 8 bytes.
+        signed: True for two's-complement interpretation.
+
+    Returns:
+        Formatted line "value=<decimal> hex=<hex>" or an error message.
+    """
+    if not address:
+        return "Error: address is required"
+    if int(size) not in (1, 2, 4, 8):
+        return "Error: size must be 1, 2, 4, or 8"
+    data = get_json(
+        "readInt",
+        {
+            "address": address,
+            "size": str(int(size)),
+            "signed": "true" if signed else "false",
+        },
+    )
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict):
+        return (
+            f"address={data.get('address')}  size={data.get('size')}  "
+            f"signed={data.get('signed')}  value={data.get('value')}  "
+            f"hex={data.get('hex')}"
+        )
+    return str(data)
+
+
+@mcp.tool()
+def read_pointer(address: str) -> str:
+    """
+    Read a pointer-sized integer at an address.
+
+    Critical for following vtables, jump tables, function-pointer arrays,
+    and any pointer-shaped data structure. The size is taken from the
+    current view (4 bytes on a 32-bit binary, 8 bytes on a 64-bit one),
+    so the caller never has to specify it. When the resulting value
+    matches a known symbol, the symbol name is included for navigation.
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+
+    Returns:
+        Formatted line including the value and (when known) the symbol
+        the pointer points at, or an error message.
+    """
+    if not address:
+        return "Error: address is required"
+    data = get_json("readPointer", {"address": address})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict):
+        points_to = data.get("points_to")
+        suffix = f"  -> {points_to}" if points_to else ""
+        return (
+            f"address={data.get('address')}  "
+            f"value={data.get('value')}  hex={data.get('hex')}{suffix}"
+        )
+    return str(data)
+
+
+@mcp.tool()
+def add_type_library(path: str) -> str:
+    """
+    Load a .bntl type library and attach it to the current binary view.
+
+    Highest-leverage typing action: one call types every matching import
+    from the library at once. Typical pairings:
+
+      - Windows malware: load `msvcrt.bntl`, `kernel32.bntl`, `user32.bntl`.
+      - Linux malware / firmware: load `libc.bntl`.
+      - Windows kernel drivers: load `ntoskrnl.bntl` or the WDK typelibs.
+
+    Args:
+        path: Absolute path to a .bntl file.
+
+    Returns:
+        Status string from the server, or an error.
+    """
+    if not path:
+        return "Error: path is required"
+    data = get_json("addTypeLibrary", {"path": path})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return (
+            f"Attached type library {data.get('name')!r} "
+            f"(arch: {data.get('arch')}) from {data.get('path')}"
+        )
+    return str(data)
+
+
+@mcp.tool()
+def demangle(name: str, abi: str = "auto") -> str:
+    """
+    Demangle a C++ symbol name to a human-readable form.
+
+    Use whenever you see a mangled import or symbol — `_ZN5MyLib...` from
+    Itanium ABI (Linux/macOS C++), `?Foo@Bar@@QEAA...` from Microsoft ABI
+    (Windows C++). The agent's first action on a C++ binary's import list
+    should usually be a demangle pass.
+
+    Args:
+        name: Mangled symbol string.
+        abi: "auto" (default — tries Itanium then MSVC), "gnu3"/"itanium",
+            or "ms"/"msvc".
+
+    Returns:
+        Demangled string with the ABI that worked, or an error message.
+    """
+    if not name:
+        return "Error: name is required"
+    data = get_json("demangle", {"name": name, "abi": abi})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        type_str = data.get("type")
+        type_suffix = f"   :: {type_str}" if type_str else ""
+        return (
+            f"[{data.get('abi')}] {data.get('mangled')} -> "
+            f"{data.get('demangled')}{type_suffix}"
+        )
+    return str(data)
+
+
+@mcp.tool()
 def get_data_var_at(address: str) -> str:
     """
     Read the data variable at an address.

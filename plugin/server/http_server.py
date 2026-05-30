@@ -1842,6 +1842,133 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling defineUserDataVar: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path in ("/readInt", "/readPointer"):
+                address_str = (
+                    params.get("address") or params.get("addr") or params.get("at")
+                )
+                if not address_str:
+                    self._send_json_response(
+                        {
+                            "error": "Missing address parameter",
+                            "help": (
+                                "Required: address. For /readInt also size (1/2/4/8). "
+                                "Optional for /readInt: signed (true/false; default false)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    addr_int = (
+                        int(address_str, 16)
+                        if isinstance(address_str, str)
+                        and (
+                            address_str.startswith("0x")
+                            or address_str.startswith("0X")
+                            or any(c in "abcdefABCDEF" for c in address_str)
+                        )
+                        else int(address_str)
+                    )
+                except ValueError:
+                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    return
+                try:
+                    if path == "/readInt":
+                        size_str = params.get("size") or params.get("width")
+                        if not size_str:
+                            self._send_json_response(
+                                {
+                                    "error": "Missing size parameter",
+                                    "help": "Required: size (1, 2, 4, or 8 bytes).",
+                                },
+                                400,
+                            )
+                            return
+                        try:
+                            size_int = int(size_str)
+                        except ValueError:
+                            self._send_json_response(
+                                {"error": "Invalid size — must be an integer"}, 400
+                            )
+                            return
+                        signed_raw = params.get("signed") or params.get("sign") or "false"
+                        signed_bool = str(signed_raw).strip().lower() in (
+                            "1",
+                            "true",
+                            "yes",
+                            "on",
+                        )
+                        result = self.binary_ops.read_int(
+                            addr_int, size_int, signed_bool
+                        )
+                    else:
+                        result = self.binary_ops.read_pointer(addr_int)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling {path}: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
+            elif path == "/addTypeLibrary":
+                tl_path = (
+                    params.get("path") or params.get("file") or params.get("library")
+                )
+                if not tl_path:
+                    self._send_json_response(
+                        {
+                            "error": "Missing path parameter",
+                            "help": "Required: path (absolute path to a .bntl file).",
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    result = self.binary_ops.add_type_library(tl_path)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling addTypeLibrary: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
+            elif path == "/demangle":
+                mangled = (
+                    params.get("name")
+                    or params.get("mangled")
+                    or params.get("symbol")
+                )
+                abi = (params.get("abi") or "auto").strip()
+                if not mangled:
+                    self._send_json_response(
+                        {
+                            "error": "Missing name parameter",
+                            "help": (
+                                "Required: name (the mangled C++ symbol). "
+                                "Optional: abi (auto|gnu3|ms; default auto)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    result = self.binary_ops.demangle(mangled, abi)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling demangle: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getDataVarAt":
                 address_str = params.get("address") or params.get("addr")
                 if not address_str:

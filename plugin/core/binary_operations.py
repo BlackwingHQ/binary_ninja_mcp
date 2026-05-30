@@ -5112,6 +5112,250 @@ class BinaryOperations:
             "type": str(parsed_type),
         }
 
+    def read_int(
+        self, address: int, size: int, signed: bool = False
+    ) -> dict[str, Any]:
+        """Read ``size`` bytes at ``address`` as an integer.
+
+        Args:
+            address: Target address.
+            size: 1, 2, 4, or 8 bytes.
+            signed: Two's-complement interpretation when True.
+
+        Returns:
+            Dict with address, size, signed flag, integer value, and hex form.
+
+        Raises:
+            RuntimeError: If no binary is loaded or BN doesn't expose ``read_int``.
+            ValueError: If the read fails or returns None (uninitialized memory).
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        if int(size) not in (1, 2, 4, 8):
+            raise ValueError(f"size must be 1, 2, 4, or 8 — got {size}")
+        bv = self._current_view
+        reader = getattr(bv, "read_int", None)
+        if not callable(reader):
+            raise RuntimeError(
+                "BinaryView.read_int is unavailable in this Binary Ninja version"
+            )
+        addr = int(address)
+        try:
+            value = reader(addr, int(size), bool(signed))
+        except Exception as e:
+            raise ValueError(f"Failed to read int at {hex(addr)}: {e!s}")
+        if value is None:
+            raise ValueError(
+                f"Read at {hex(addr)} returned None (uninitialized memory?)"
+            )
+        return {
+            "address": hex(addr),
+            "size": int(size),
+            "signed": bool(signed),
+            "value": int(value),
+            "hex": hex(int(value) & ((1 << (int(size) * 8)) - 1)),
+        }
+
+    def read_pointer(self, address: int) -> dict[str, Any]:
+        """Read a pointer-sized integer at ``address``.
+
+        The size is taken from the current view's address size, so this
+        works correctly for 32-bit and 64-bit binaries without the caller
+        specifying it. When the resulting value matches a known symbol,
+        the symbol name is attached for navigation.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        reader = getattr(bv, "read_pointer", None)
+        if not callable(reader):
+            raise RuntimeError(
+                "BinaryView.read_pointer is unavailable in this Binary Ninja version"
+            )
+        addr = int(address)
+        try:
+            value = reader(addr)
+        except Exception as e:
+            raise ValueError(f"Failed to read pointer at {hex(addr)}: {e!s}")
+        if value is None:
+            raise ValueError(
+                f"Pointer read at {hex(addr)} returned None (uninitialized memory?)"
+            )
+        value_int = int(value)
+        points_to: str | None = None
+        try:
+            sym = bv.get_symbol_at(value_int)
+            if sym is not None:
+                points_to = getattr(sym, "name", None)
+        except Exception:
+            points_to = None
+        return {
+            "address": hex(addr),
+            "value": value_int,
+            "hex": hex(value_int),
+            "points_to": points_to,
+        }
+
+    def add_type_library(self, path: str) -> dict[str, Any]:
+        """Load a BNTL type library from disk and attach it to the current view.
+
+        Loading a typelib like libc.bntl, msvcrt.bntl, or a WDK kernel
+        library types every matching import in one call — one of the
+        highest-leverage actions for malware / driver / firmware RE.
+
+        Args:
+            path: Absolute path to a ``.bntl`` file.
+
+        Returns:
+            Dict with status, the path, the library name (when exposed),
+            and the architecture string.
+
+        Raises:
+            RuntimeError: If no binary is loaded or ``TypeLibrary`` is missing.
+            ValueError: If the path is empty, the file doesn't exist, or
+                BN refuses to load / attach the library.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        import os as _os
+
+        clean_path = (path or "").strip()
+        if not clean_path:
+            raise ValueError("Empty type library path")
+        if not _os.path.exists(clean_path):
+            raise ValueError(f"Type library file not found: {clean_path}")
+
+        tl_class = getattr(bn, "TypeLibrary", None)
+        if tl_class is None:
+            raise RuntimeError("TypeLibrary unavailable in this BN version")
+        loader = getattr(tl_class, "load_from_file", None)
+        if not callable(loader):
+            raise RuntimeError(
+                "TypeLibrary.load_from_file unavailable in this BN version"
+            )
+
+        try:
+            library = loader(clean_path)
+        except Exception as e:
+            raise ValueError(f"Failed to load type library: {e!s}")
+        if library is None:
+            raise ValueError(f"Type library at {clean_path} loaded as None")
+
+        attach = getattr(bv, "add_type_library", None)
+        if not callable(attach):
+            raise RuntimeError(
+                "BinaryView.add_type_library unavailable in this BN version"
+            )
+        try:
+            attach(library)
+        except Exception as e:
+            raise ValueError(f"Failed to attach type library: {e!s}")
+
+        return {
+            "status": "ok",
+            "path": clean_path,
+            "name": str(getattr(library, "name", None)) if getattr(library, "name", None) is not None else None,
+            "arch": str(getattr(library, "arch", None)) if getattr(library, "arch", None) is not None else None,
+        }
+
+    def demangle(
+        self, name: str, abi: str = "auto"
+    ) -> dict[str, Any]:
+        """Demangle a C++ symbol name to a human-readable form.
+
+        Tries the Itanium (``gnu3``) and Microsoft (``ms``) demanglers,
+        in that order when ``abi="auto"``. Returns the first one that
+        produces a result.
+
+        Args:
+            name: Mangled symbol (e.g. ``"_ZN5MyLib7ProcessC1EPKc"`` or
+                ``"?Process@MyLib@@QEAA@PEBD@Z"``).
+            abi: ``"auto"`` (default), ``"gnu3"``/``"itanium"``, or
+                ``"ms"``/``"msvc"``.
+
+        Returns:
+            Dict with status, the input mangled name, the ABI that
+            succeeded, the demangled pretty name, and (best-effort) the
+            recovered C type string.
+
+        Raises:
+            RuntimeError: If no binary is loaded or BN's demangle module
+                is unavailable.
+            ValueError: If the name is empty, the ABI is unknown, or no
+                demangler accepted the input.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise ValueError("Empty mangled name")
+
+        bv = self._current_view
+        arch = getattr(bv, "arch", None) or getattr(
+            getattr(bv, "platform", None), "arch", None
+        )
+
+        demangle_mod = getattr(bn, "demangle", None)
+        if demangle_mod is None:
+            raise RuntimeError("binaryninja.demangle module unavailable")
+        gnu3 = getattr(demangle_mod, "demangle_gnu3", None)
+        ms = getattr(demangle_mod, "demangle_ms", None)
+
+        norm_abi = (abi or "auto").strip().lower()
+        attempts: list[tuple[str, Any]] = []
+        if norm_abi in ("auto", "gnu3", "itanium") and callable(gnu3):
+            attempts.append(("gnu3", gnu3))
+        if norm_abi in ("auto", "ms", "msvc") and callable(ms):
+            attempts.append(("ms", ms))
+        if not attempts:
+            raise ValueError(
+                f"Unknown ABI {abi!r} or no matching demanglers exposed by BN"
+            )
+
+        last_error: Exception | None = None
+        for attempt_abi, fn in attempts:
+            try:
+                result = fn(arch, clean_name)
+            except Exception as e:
+                last_error = e
+                continue
+            if not result:
+                continue
+            type_obj = None
+            name_obj = None
+            if isinstance(result, tuple):
+                if len(result) >= 1:
+                    type_obj = result[0]
+                if len(result) >= 2:
+                    name_obj = result[1]
+            else:
+                name_obj = result
+            if name_obj is None:
+                continue
+            # name_obj may be a QualifiedName (iterable of parts), a list, or a string.
+            if isinstance(name_obj, str):
+                pretty = name_obj
+            else:
+                try:
+                    parts = [str(p) for p in list(name_obj)]
+                    pretty = "::".join(parts) if parts else str(name_obj)
+                except Exception:
+                    pretty = str(name_obj)
+            return {
+                "status": "ok",
+                "mangled": clean_name,
+                "abi": attempt_abi,
+                "demangled": pretty,
+                "type": str(type_obj) if type_obj is not None else None,
+            }
+
+        if last_error is not None:
+            raise ValueError(f"Demangling failed: {last_error!s}")
+        raise ValueError(
+            f"Demangling failed for {clean_name!r} — no demangler accepted it"
+        )
+
     def get_data_var_at(self, address: int) -> dict[str, Any]:
         """Read the data variable at an address.
 
