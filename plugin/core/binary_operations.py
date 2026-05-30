@@ -4170,6 +4170,149 @@ class BinaryOperations:
             "definitions": defs,
         }
 
+    def get_parameter_at(
+        self,
+        address: int,
+        index: int,
+        function_ident: str | int | None = None,
+    ) -> dict[str, Any]:
+        """Resolve the i-th argument at a callsite as an MLIL expression.
+
+        Backed by the MLIL call instruction's ``params`` attribute — gives
+        the lifted expression that's actually being passed (e.g. ``var_18``
+        or ``"hello"`` rather than a raw register name).
+
+        Args:
+            address: Call instruction address.
+            index: Zero-based parameter index.
+            function_ident: Optional containing-function identifier.
+                Auto-resolved when omitted.
+
+        Returns:
+            Dict with status, function, callsite address, index, the
+            best-effort callee name, and the MLIL expression as a string.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function can't be found, no call exists at
+                the address, or the parameter index is out of range.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        addr = int(address)
+        idx = int(index)
+        if idx < 0:
+            raise ValueError(f"Parameter index must be non-negative, got {idx}")
+
+        # Resolve containing function (auto when not supplied).
+        if function_ident in (None, ""):
+            try:
+                container_getter = getattr(bv, "get_functions_containing", None)
+                fns = (
+                    list(container_getter(addr) or [])
+                    if callable(container_getter)
+                    else []
+                )
+            except Exception:
+                fns = []
+            if not fns:
+                raise ValueError(
+                    f"No function contains {hex(addr)}; pass function explicitly"
+                )
+            func = fns[0]
+        else:
+            func = self.get_function_by_name_or_address(function_ident)
+            if func is None:
+                raise ValueError(f"Function not found: {function_ident!r}")
+
+        # Walk MLIL instructions at the address and pick the first call.
+        mlil = getattr(func, "mlil", None)
+        if mlil is None:
+            raise ValueError(
+                f"MLIL unavailable for {getattr(func, 'name', '?')} — "
+                "analysis may not have completed"
+            )
+        instrs_getter = getattr(mlil, "get_instructions_at", None)
+        if not callable(instrs_getter):
+            raise RuntimeError(
+                "MediumLevelILFunction.get_instructions_at is unavailable in this BN version"
+            )
+
+        call_instr = None
+        try:
+            for instr in instrs_getter(addr) or []:
+                op = getattr(instr, "operation", None)
+                op_name = str(op) if op is not None else ""
+                if "CALL" in op_name.upper():
+                    call_instr = instr
+                    break
+        except Exception as e:
+            raise ValueError(f"Failed to enumerate MLIL at {hex(addr)}: {e!s}")
+
+        if call_instr is None:
+            raise ValueError(
+                f"No call instruction at {hex(addr)} in "
+                f"{getattr(func, 'name', '?')}"
+            )
+
+        params = getattr(call_instr, "params", None)
+        if params is None:
+            raise ValueError(
+                f"Call at {hex(addr)} has no params attribute on its MLIL instruction"
+            )
+        try:
+            params_list = list(params)
+        except Exception:
+            params_list = []
+
+        if not 0 <= idx < len(params_list):
+            raise ValueError(
+                f"Parameter index {idx} out of range; call at {hex(addr)} has {len(params_list)} args"
+            )
+
+        expr_str = str(params_list[idx])
+
+        # Best-effort callee name resolution from the call's dest.
+        callee_name: str | None = None
+        try:
+            dest = getattr(call_instr, "dest", None)
+            if dest is not None:
+                dest_val = getattr(dest, "constant", None)
+                if dest_val is None:
+                    dest_val = getattr(dest, "value", None)
+                if dest_val is not None:
+                    try:
+                        callee_addr = int(dest_val)
+                    except Exception:
+                        callee_addr = None
+                    if callee_addr is not None:
+                        try:
+                            callee_func = bv.get_function_at(callee_addr)
+                            if callee_func is not None:
+                                callee_name = getattr(callee_func, "name", None)
+                        except Exception:
+                            pass
+                        if callee_name is None:
+                            try:
+                                sym = bv.get_symbol_at(callee_addr)
+                                if sym is not None:
+                                    callee_name = getattr(sym, "name", None)
+                            except Exception:
+                                pass
+        except Exception:
+            callee_name = None
+
+        return {
+            "status": "ok",
+            "function": getattr(func, "name", None),
+            "address": hex(addr),
+            "index": idx,
+            "callee": callee_name,
+            "param_count": len(params_list),
+            "expression": expr_str,
+        }
+
     # ---------------- Tags ----------------
     def _serialize_tag(self, tag: Any, kind: str) -> dict[str, Any]:
         """Render a Tag into a JSON-friendly dict; tolerant of API drift."""

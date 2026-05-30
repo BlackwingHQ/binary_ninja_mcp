@@ -1205,6 +1205,48 @@ def _format_tag(tag: dict) -> str:
 
 
 @mcp.tool()
+def get_parameter_at(address: str, index: int, function: str = "") -> str:
+    """
+    Resolve what value is being passed as a callsite's i-th argument.
+
+    Answers "what does this strcpy/memcpy/syscall get called with?" using
+    the MLIL call instruction's params attribute — gives the lifted
+    expression that's actually being passed, not raw register names.
+
+    Args:
+        address: Call instruction address (hex like "0x401080" or decimal).
+        index: Zero-based parameter index.
+        function: Optional containing-function name or address. When
+            omitted the server auto-resolves it from the address.
+
+    Returns:
+        Status string describing the resolved expression, callee name (when
+        determinable), and total parameter count. Returns 404-style error
+        if there's no call at the address or the index is out of range.
+    """
+    if not address:
+        return "Error: address is required"
+    if index is None or int(index) < 0:
+        return "Error: index must be a non-negative integer"
+    params: dict = {"address": address, "index": str(int(index))}
+    if function:
+        params["function"] = function
+    data = get_json("getParameterAt", params)
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        callee = data.get("callee") or "(unknown callee)"
+        return (
+            f"At {data.get('address')} in {data.get('function')!r}, "
+            f"call to {callee} arg[{data.get('index')}] = "
+            f"{data.get('expression')} (of {data.get('param_count')} total)"
+        )
+    return str(data)
+
+
+@mcp.tool()
 def get_constants_referenced_by(address: str, function: str = "") -> list:
     """
     List immediate constants referenced by an instruction.

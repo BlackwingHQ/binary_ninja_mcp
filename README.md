@@ -207,6 +207,7 @@ The following table lists the available MCP functions for use:
 | `set_function_inline(function, inline)`                              | Force or un-force BN's inline-during-analysis behavior. Useful for small helpers.                             |
 | `get_var_uses(function, variable, il_level)`                         | Find every use site of a local variable inside a function. `il_level` filters to `all`/`hlil`/`mlil`/`llil`. |
 | `get_var_definitions(function, variable, il_level)`                  | Find every definition (write) site of a local variable inside a function.                                     |
+| `get_parameter_at(address, index, function)`                         | Resolve the i-th argument at a callsite as an MLIL expression (auto-resolves containing function and callee name). |
 | `get_constants_referenced_by(address, function)`                     | Immediate constants referenced by an instruction (value, size, pointer/intermediate flags). `function` is optional — auto-resolved when omitted. |
 | `get_regs_read_by(address, function)`                                | Register names read by an instruction.                                                                        |
 | `get_regs_written_by(address, function)`                             | Register names written by an instruction.                                                                     |
@@ -265,6 +266,7 @@ These are the list of HTTP endpoints that can be called:
 - `/setFunctionInline?function=<name|addr>&inline=<true|false>`: Toggle `inline_during_analysis`.
 - `/getVarUses?function=<name|addr>&variable=<name>&ilLevel=<all|hlil|mlil|llil>`: List use sites of a local variable inside a function. Each entry includes the address, BN's il_type, and the HLIL snippet when available.
 - `/getVarDefinitions?function=<name|addr>&variable=<name>&ilLevel=<all|hlil|mlil|llil>`: Same shape as `/getVarUses` but for definition (write) sites.
+- `/getParameterAt?address=<callsite>&index=<n>&function=<name|addr>`: Resolve the i-th argument at a callsite. `function` is optional. Returns `{status, function, address, index, callee, param_count, expression}`.
 - `/getConstantsReferencedBy?address=<addr>&function=<name|addr>`: Constants referenced by the instruction at `address`. `function` is optional — auto-resolved from the containing function when omitted.
 - `/getRegsReadBy?address=<addr>&function=<name|addr>`: Register names read by the instruction.
 - `/getRegsWrittenBy?address=<addr>&function=<name|addr>`: Register names written by the instruction.

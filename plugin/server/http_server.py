@@ -2269,6 +2269,70 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     bn.log_error(f"Error handling {path}: {e}")
                     self._send_json_response({"error": str(e)}, 500)
 
+            elif path == "/getParameterAt":
+                address_str = (
+                    params.get("address") or params.get("addr") or params.get("at")
+                )
+                index_str = (
+                    params.get("index")
+                    or params.get("i")
+                    or params.get("paramIndex")
+                )
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("function")
+                    or params.get("functionName")
+                )
+                if not address_str or index_str is None or index_str == "":
+                    self._send_json_response(
+                        {
+                            "error": "Missing parameters",
+                            "help": (
+                                "Required: address (callsite), index (0-based). "
+                                "Optional: function (auto-resolved when omitted)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    addr_int = (
+                        int(address_str, 16)
+                        if isinstance(address_str, str)
+                        and (
+                            address_str.startswith("0x")
+                            or address_str.startswith("0X")
+                            or any(c in "abcdefABCDEF" for c in address_str)
+                        )
+                        else int(address_str)
+                    )
+                except ValueError:
+                    self._send_json_response(
+                        {"error": "Invalid address format"}, 400
+                    )
+                    return
+                try:
+                    idx_int = int(index_str)
+                except ValueError:
+                    self._send_json_response(
+                        {"error": "Invalid index — must be a non-negative integer"},
+                        400,
+                    )
+                    return
+                try:
+                    result = self.binary_ops.get_parameter_at(
+                        addr_int, idx_int, fn_ident or None
+                    )
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling getParameterAt: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getVarUses" or path == "/getVarDefinitions":
                 fn_ident = (
                     params.get("functionAddress")
