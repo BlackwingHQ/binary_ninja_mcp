@@ -2,7 +2,7 @@ import json
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any
+from typing import Any, ClassVar
 
 import binaryninja as bn
 from binaryninja.settings import Settings
@@ -19,6 +19,15 @@ from ..utils.string_utils import parse_int_or_default
 
 class MCPRequestHandler(BaseHTTPRequestHandler):
     binary_ops = None  # Will be set by the server
+    _BINARY_OPTIONAL_PATH_PREFIXES: ClassVar[tuple[str, ...]] = (
+        "/status",
+        "/convertNumber",
+        "/platforms",
+        "/binaries",
+        "/views",
+        "/selectBinary",
+    )
+    _BINARY_OPTIONAL_POST_PATHS: ClassVar[set[str]] = {"/load"}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -108,6 +117,13 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             tokens = [tok.strip() for tok in raw.replace(";", ",").split(",")]
             identifiers.extend([tok for tok in tokens if tok])
         return identifiers
+
+    def _requires_binary_loaded(self, path: str, method: str) -> bool:
+        if any(path.startswith(prefix) for prefix in self._BINARY_OPTIONAL_PATH_PREFIXES):
+            return False
+        if method == "POST" and path in self._BINARY_OPTIONAL_POST_PATHS:
+            return False
+        return True
 
     def _parse_post_params(self) -> dict[str, Any]:
         """Parse POST request parameters from various formats.
@@ -381,22 +397,11 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         try:
             if not self._check_auth():
                 return
-            # For all endpoints except /status, /convertNumber, /platforms, /binaries, /views, /selectBinary, check loaded
-            if (
-                not (
-                    self.path.startswith("/status")
-                    or self.path.startswith("/convertNumber")
-                    or self.path.startswith("/platforms")
-                    or self.path.startswith("/binaries")
-                    or self.path.startswith("/views")
-                    or self.path.startswith("/selectBinary")
-                )
-                and not self._check_binary_loaded()
-            ):
+            path = urllib.parse.urlparse(self.path).path
+            if self._requires_binary_loaded(path, "GET") and not self._check_binary_loaded():
                 return
 
             params = self._parse_query_params()
-            path = urllib.parse.urlparse(self.path).path
             offset = parse_int_or_default(params.get("offset"), 0)
             # Support both `limit` and `count` (alias) for pagination
             if params.get("count") is not None:
@@ -3218,11 +3223,11 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         try:
             if not self._check_auth():
                 return
-            if not self._check_binary_loaded():
+            path = urllib.parse.urlparse(self.path).path
+            if self._requires_binary_loaded(path, "POST") and not self._check_binary_loaded():
                 return
 
             params = self._parse_post_params()
-            path = urllib.parse.urlparse(self.path).path
 
             bn.log_info(f"POST {path} with params: {params}")
 
