@@ -1842,6 +1842,42 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling defineUserDataVar: {e}")
                     self._send_json_response({"error": str(e)}, 500)
+            elif path == "/getDataVarAt":
+                address_str = params.get("address") or params.get("addr")
+                if not address_str:
+                    self._send_json_response(
+                        {
+                            "error": "Missing address parameter",
+                            "help": "Required: address (hex like 0x401000 or decimal).",
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    addr_int = (
+                        int(address_str, 16)
+                        if isinstance(address_str, str)
+                        and (
+                            address_str.startswith("0x")
+                            or address_str.startswith("0X")
+                            or any(c in "abcdefABCDEF" for c in address_str)
+                        )
+                        else int(address_str)
+                    )
+                except ValueError:
+                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    return
+                try:
+                    result = self.binary_ops.get_data_var_at(addr_int)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling getDataVarAt: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
             elif path == "/undefineUserDataVar":
                 address_str = params.get("address") or params.get("addr")
                 if not address_str:
@@ -1886,6 +1922,34 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     self._send_json_response({"error": str(re_err)}, 500)
                 except Exception as e:
                     bn.log_error(f"Error handling updateAnalysisAndWait: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+            elif path == "/reanalyzeFunction":
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("address")
+                    or params.get("function")
+                    or params.get("functionName")
+                    or params.get("name")
+                )
+                if not fn_ident:
+                    self._send_json_response(
+                        {
+                            "error": "Missing function identifier",
+                            "help": "Provide function (or functionName/address).",
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    result = self.binary_ops.reanalyze_function(fn_ident)
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling reanalyzeFunction: {e}")
                     self._send_json_response({"error": str(e)}, 500)
             elif path == "/undo":
                 try:

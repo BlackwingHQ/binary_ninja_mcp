@@ -868,6 +868,42 @@ def define_user_data_var(address: str, type: str) -> str:
 
 
 @mcp.tool()
+def get_data_var_at(address: str) -> str:
+    """
+    Read the data variable at an address.
+
+    Returns the name (if any), C type, and a string representation of the
+    stored value. Use this as the targeted-read companion to
+    `define_user_data_var` / `undefine_user_data_var` — much cheaper than
+    paginating `list_data_items` to find one address.
+
+    Args:
+        address: Target address (hex like "0x401000" or decimal).
+
+    Returns:
+        Formatted lines describing the data variable, or an error.
+    """
+    if not address:
+        return "Error: address is required"
+    data = get_json("getDataVarAt", {"address": address})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if not isinstance(data, dict):
+        return str(data)
+    name = data.get("name") or "(unnamed)"
+    type_str = data.get("type") or "(unknown)"
+    value = data.get("value") or "(no value)"
+    return (
+        f"address : {data.get('address')}\n"
+        f"name    : {name}\n"
+        f"type    : {type_str}\n"
+        f"value   : {value}"
+    )
+
+
+@mcp.tool()
 def undefine_user_data_var(address: str) -> str:
     """
     Remove a user data variable at an address.
@@ -889,6 +925,37 @@ def undefine_user_data_var(address: str) -> str:
     if isinstance(data, dict) and data.get("status") == "ok":
         prior = data.get("removed_type") or "(unknown type)"
         return f"Removed data variable (was {prior}) at {data.get('address')}"
+    return str(data)
+
+
+@mcp.tool()
+def reanalyze_function(function: str) -> str:
+    """
+    Trigger reanalysis of a single function.
+
+    Cheaper than `update_analysis` when only one function changed (e.g.
+    after a single retype or prototype change). The call returns as soon
+    as BN accepts the request; if you need the result fully settled
+    before the next query, call `update_analysis` afterwards.
+
+    Args:
+        function: Function name or address.
+
+    Returns:
+        Status string from the server.
+    """
+    if not function:
+        return "Error: function is required"
+    data = get_json("reanalyzeFunction", {"function": function})
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if isinstance(data, dict) and data.get("status") == "ok":
+        return (
+            f"Reanalysis triggered for {data.get('function')!r} "
+            f"at {data.get('address')}"
+        )
     return str(data)
 
 

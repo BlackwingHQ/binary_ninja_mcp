@@ -4561,6 +4561,66 @@ class BinaryOperations:
         )
         return result
 
+    def reanalyze_function(
+        self, function_ident: str | int
+    ) -> dict[str, Any]:
+        """Trigger reanalysis of a single function.
+
+        Faster than ``update_analysis_and_wait`` when only one function
+        changed. The call returns as soon as BN accepts the request; the
+        reanalysis itself runs asynchronously, so follow up with
+        ``update_analysis`` if you need the result fully settled before
+        the next query.
+
+        Args:
+            function_ident: Function name or address.
+
+        Returns:
+            Dict with status, function name, start address, and a note
+            reminding the caller that reanalysis is async.
+
+        Raises:
+            RuntimeError: If no binary is loaded or BN refuses.
+            ValueError: If the function can't be found.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        func = self.get_function_by_name_or_address(function_ident)
+        if func is None:
+            raise ValueError(f"Function not found: {function_ident!r}")
+
+        reanalyze = getattr(func, "reanalyze", None)
+        if not callable(reanalyze):
+            raise RuntimeError(
+                "Function.reanalyze is unavailable in this Binary Ninja version"
+            )
+
+        try:
+            # UserFunctionUpdate when available — it's the right update type
+            # for an agent-driven change. Older BN versions take no args.
+            update_type_enum = getattr(bn, "FunctionUpdateType", None)
+            user_update = (
+                getattr(update_type_enum, "UserFunctionUpdate", None)
+                if update_type_enum is not None
+                else None
+            )
+            if user_update is not None:
+                try:
+                    reanalyze(user_update)
+                except TypeError:
+                    reanalyze()
+            else:
+                reanalyze()
+        except Exception as e:
+            raise RuntimeError(f"reanalyze failed: {e!s}")
+
+        return {
+            "status": "ok",
+            "function": getattr(func, "name", None),
+            "address": hex(int(getattr(func, "start", 0))),
+            "note": "Reanalysis triggered. Call update_analysis to block until it settles.",
+        }
+
     def update_analysis_and_wait(self) -> dict[str, Any]:
         """Force a full reanalysis of the current view and block until idle.
 
@@ -4656,6 +4716,63 @@ class BinaryOperations:
             "status": "ok",
             "address": hex(addr),
             "type": str(parsed_type),
+        }
+
+    def get_data_var_at(self, address: int) -> dict[str, Any]:
+        """Read the data variable at an address.
+
+        Args:
+            address: Target address.
+
+        Returns:
+            Dict with address, symbol name (if any), type as a C string,
+            and a best-effort string representation of the stored value.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If no data variable exists at the address.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+        addr = int(address)
+
+        dv = None
+        try:
+            dv = bv.get_data_var_at(addr)
+        except Exception:
+            dv = None
+        if dv is None:
+            raise ValueError(f"No data variable at {hex(addr)}")
+
+        type_str: str | None = None
+        try:
+            t = getattr(dv, "type", None)
+            type_str = str(t) if t is not None else None
+        except Exception:
+            type_str = None
+
+        sym_name: str | None = None
+        try:
+            sym = bv.get_symbol_at(addr)
+            if sym is not None:
+                sym_name = getattr(sym, "name", None)
+        except Exception:
+            sym_name = None
+
+        value_str: str | None = None
+        try:
+            v = getattr(dv, "value", None)
+            if v is not None:
+                value_str = str(v)
+        except Exception:
+            value_str = None
+
+        return {
+            "address": hex(addr),
+            "name": sym_name,
+            "type": type_str,
+            "value": value_str,
         }
 
     def undefine_user_data_var(self, address: int) -> dict[str, Any]:

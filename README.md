@@ -192,7 +192,9 @@ The following table lists the available MCP functions for use:
 | `undefine_user_type(name)`                                           | Remove a user-defined type by name. Auto/library types are rejected (returns 404).                           |
 | `define_user_data_var(address, type)`                                | Type a global at an address. `type` is C-style (e.g. `"uint8_t"`, `"struct Foo *"`). Propagates the type through every xref. |
 | `undefine_user_data_var(address)`                                    | Remove a user data variable at an address. Returns 404 if none exists.                                        |
+| `get_data_var_at(address)`                                           | Read the data variable at an address — targeted read companion to `define_user_data_var`. Returns 404 if none exists. |
 | `update_analysis()`                                                  | Force a full Binary Ninja reanalysis and block until idle. Use after batch mutations so later queries see propagated state. May be slow on large binaries. |
+| `reanalyze_function(function)`                                       | Trigger reanalysis of a single function. Async — follow up with `update_analysis()` if you need the result settled before the next query. |
 | `undo()`                                                             | Undo the most recent BN action. Response includes the post-call `can_undo` / `can_redo` flags.                |
 | `redo()`                                                             | Redo the most recently undone BN action.                                                                      |
 | `list_tag_types()`                                                   | List all tag types known to BN (built-in plus user-created).                                                  |
@@ -248,7 +250,9 @@ These are the list of HTTP endpoints that can be called:
 - `/undefineUserType?name=<typeName>`: Remove a user-defined type. Returns 404 if no user type by that name exists, or if BN refuses to remove it.
 - `/defineUserDataVar?address=<addr>&type=<cType>`: Type a global at an address. `type` is C-style (`uint8_t`, `struct Foo *`, `char[16]`).
 - `/undefineUserDataVar?address=<addr>`: Remove the user data variable at an address. Returns 404 if no data variable exists there.
+- `/getDataVarAt?address=<addr>`: Read the data variable at an address. Returns `{address, name, type, value}` or 404.
 - `/updateAnalysisAndWait`: Force a full reanalysis and block until BN reports analysis is idle. Returns `{status, duration_ms, analysis_info}`. No client-side timeout — may run for many seconds on large binaries.
+- `/reanalyzeFunction?function=<name|addr>`: Trigger async reanalysis of a single function. Faster than `/updateAnalysisAndWait` when only one function changed.
 - `/undo`: Undo the most recent BN action. Returns `{status, action, result, can_undo, can_redo}`.
 - `/redo`: Redo the most recently undone BN action. Same response shape as `/undo`.
 - `/tagTypes`: List all tag types defined on the current view.
