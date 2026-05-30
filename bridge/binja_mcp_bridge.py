@@ -17,6 +17,8 @@ from mcp.server.fastmcp import FastMCP
 
 binja_server_url = "http://localhost:9009"
 mcp = FastMCP("binja-mcp")
+DEFAULT_HTTP_TIMEOUT_SECONDS = 5
+APPROVAL_OPERATION_TIMEOUT_SECONDS = 1800
 
 # Token file lives at <plugin_root>/.mcp_auth_token, two dirs up from this file.
 # Re-read on every request so `setup_plugin.py --regen-token` takes effect on
@@ -51,7 +53,9 @@ def _active_filename() -> str:
     return "(none)"
 
 
-def safe_get(endpoint: str, params: dict | None = None, timeout: float | None = 5) -> list:
+def safe_get(
+    endpoint: str, params: dict | None = None, timeout: float | None = DEFAULT_HTTP_TIMEOUT_SECONDS
+) -> list:
     """
     Perform a GET request. If 'params' is given, we convert it to a query string.
     """
@@ -73,7 +77,9 @@ def safe_get(endpoint: str, params: dict | None = None, timeout: float | None = 
         return [f"Request failed: {e!s}"]
 
 
-def get_json(endpoint: str, params: dict | None = None, timeout: float | None = 5):
+def get_json(
+    endpoint: str, params: dict | None = None, timeout: float | None = DEFAULT_HTTP_TIMEOUT_SECONDS
+):
     """
     Perform a GET and return parsed JSON.
     - On 2xx: returns parsed JSON.
@@ -109,7 +115,9 @@ def get_json(endpoint: str, params: dict | None = None, timeout: float | None = 
         return {"error": f"Request failed: {e!s}"}
 
 
-def post_json(endpoint: str, payload: dict | None = None, timeout: float | None = 5):
+def post_json(
+    endpoint: str, payload: dict | None = None, timeout: float | None = DEFAULT_HTTP_TIMEOUT_SECONDS
+):
     """
     Perform a POST and return parsed JSON.
     - On 2xx: returns parsed JSON.
@@ -141,7 +149,9 @@ def post_json(endpoint: str, payload: dict | None = None, timeout: float | None 
         return {"error": f"Request failed: {e!s}"}
 
 
-def get_text(endpoint: str, params: dict | None = None, timeout: float | None = 5) -> str:
+def get_text(
+    endpoint: str, params: dict | None = None, timeout: float | None = DEFAULT_HTTP_TIMEOUT_SECONDS
+) -> str:
     """Perform a GET and return raw text (or an error string)."""
     if params is None:
         params = {}
@@ -160,21 +170,23 @@ def get_text(endpoint: str, params: dict | None = None, timeout: float | None = 
         return f"Request failed: {e!s}"
 
 
-def safe_post(endpoint: str, data: dict | str) -> str:
+def safe_post(
+    endpoint: str, data: dict | str, timeout: float | None = DEFAULT_HTTP_TIMEOUT_SECONDS
+) -> str:
     try:
         if isinstance(data, dict):
             response = requests.post(
                 f"{binja_server_url}/{endpoint}",
                 data=data,
                 headers=_auth_headers(),
-                timeout=5,
+                timeout=timeout,
             )
         else:
             response = requests.post(
                 f"{binja_server_url}/{endpoint}",
                 data=data.encode("utf-8"),
                 headers=_auth_headers(),
-                timeout=5,
+                timeout=timeout,
             )
         response.encoding = "utf-8"
         if response.ok:
@@ -185,13 +197,15 @@ def safe_post(endpoint: str, data: dict | str) -> str:
         return f"Request failed: {e!s}"
 
 
-def safe_delete(endpoint: str, params: dict | None = None) -> str:
+def safe_delete(
+    endpoint: str, params: dict | None = None, timeout: float | None = DEFAULT_HTTP_TIMEOUT_SECONDS
+) -> str:
     try:
         response = requests.delete(
             f"{binja_server_url}/{endpoint}",
             params=params or {},
             headers=_auth_headers(),
-            timeout=5,
+            timeout=timeout,
         )
         response.encoding = "utf-8"
         if response.ok:
@@ -2322,7 +2336,7 @@ def patch_bytes(address: str, data: str, save_to_file: bool = False) -> str:
             return "Error: save_to_file must be true/false/1/0/yes/no/on/off"
 
     params = {"address": address, "data": data, "save_to_file": save_to_file}
-    result = post_json("patch", params, timeout=None)
+    result = post_json("patch", params, timeout=APPROVAL_OPERATION_TIMEOUT_SECONDS)
     if not result:
         return "Error: no response"
 
