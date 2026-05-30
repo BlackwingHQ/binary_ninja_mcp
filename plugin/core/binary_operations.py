@@ -8,6 +8,7 @@ from typing import Any, ClassVar
 import binaryninja as bn
 from binaryninja.enums import StructureVariant, TypeClass
 
+from ..utils.address import is_address_literal, parse_address
 from ..utils.string_utils import escape_non_ascii
 from .config import BinaryNinjaConfig
 
@@ -314,19 +315,16 @@ class BinaryOperations:
         if not self._current_view:
             raise RuntimeError("No binary loaded")
 
-        # Handle address-based lookup
-        try:
-            if isinstance(identifier, str) and identifier.startswith("0x"):
-                addr = int(identifier, 16)
-            elif isinstance(identifier, (int, str)):
-                addr = int(identifier) if isinstance(identifier, str) else identifier
-
-            func = self._current_view.get_function_at(addr)
-            if func:
-                bn.log_info(f"Found function at address {hex(addr)}: {func.name}")
-                return func
-        except ValueError:
-            pass
+        address_error: ValueError | None = None
+        if is_address_literal(identifier):
+            try:
+                addr = parse_address(identifier, field="function identifier")
+                func = self._current_view.get_function_at(addr)
+                if func:
+                    bn.log_info(f"Found function at address {hex(addr)}: {func.name}")
+                    return func
+            except ValueError as e:
+                address_error = e
 
         # Handle name-based lookup with case sensitivity
         for func in self._current_view.functions:
@@ -347,6 +345,9 @@ class BinaryOperations:
             if func:
                 bn.log_info(f"Found function through symbol lookup: {func.name}")
                 return func
+
+        if address_error is not None:
+            raise address_error
 
         bn.log_error(f"Could not find function: {identifier}")
         return None
@@ -1020,14 +1021,10 @@ class BinaryOperations:
         if not self._current_view:
             raise RuntimeError("No binary loaded")
 
-        # Parse address
         try:
-            if isinstance(address, str) and address.lower().startswith("0x"):
-                addr = int(address, 16)
-            else:
-                addr = int(address)
-        except Exception:
-            raise ValueError(f"Invalid address: {address}")
+            addr = parse_address(address)
+        except ValueError as e:
+            raise ValueError(str(e)) from None
 
         bv = self._current_view
 
@@ -2493,14 +2490,10 @@ class BinaryOperations:
         if not self._current_view:
             raise RuntimeError("No binary loaded")
 
-        # Normalize address to int
         try:
-            if isinstance(address, str):
-                addr = int(address, 16) if address.startswith("0x") else int(address)
-            else:
-                addr = int(address)
-        except (TypeError, ValueError):
-            raise ValueError("Invalid address format; use hex (0x...) or decimal")
+            addr = parse_address(address)
+        except ValueError as e:
+            raise ValueError(str(e)) from None
 
         result: dict[str, Any] = {
             "address": hex(addr),
@@ -5751,21 +5744,7 @@ class BinaryOperations:
         if not self._current_view:
             raise RuntimeError("No binary loaded")
 
-        # Parse address
-        # Only treat as hex if it has "0x" prefix or contains a-f/A-F characters
-        # This avoids ambiguity where "123" would be treated as hex instead of decimal
-        if isinstance(address, str):
-            address = address.strip()
-            if address.startswith("0x") or address.startswith("0X"):
-                addr = int(address, 16)
-            elif any(c in "abcdefABCDEF" for c in address):
-                # Contains hex letters, treat as hex
-                addr = int(address, 16)
-            else:
-                # Pure digits, treat as decimal
-                addr = int(address, 10)
-        else:
-            addr = int(address)
+        addr = parse_address(address)
 
         # Parse data into bytes
         patch_bytes = None

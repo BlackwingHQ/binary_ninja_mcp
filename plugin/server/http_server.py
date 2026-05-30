@@ -10,6 +10,12 @@ from binaryninja.settings import Settings
 from ..api.endpoints import BinaryNinjaEndpoints
 from ..core.binary_operations import BinaryOperations
 from ..core.config import Config
+from ..utils.address import (
+    AddressParseError,
+    is_address_literal,
+    parse_address,
+    parse_optional_address,
+)
 from ..utils.approval import require_approval
 from ..utils.auth import matches as auth_matches
 from ..utils.auth import read_token, token_file_path
@@ -188,10 +194,10 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
 
     # ---------- Helpers ----------
     def _resolve_name_to_address(self, ident: str):
-        """Resolve a symbol name or hex address string to (address:int, label:str).
+        """Resolve a symbol name or unambiguous address string to (address:int, label:str).
 
         Tries, in order:
-        - Parse hex address (with or without 0x)
+        - Parse address (0x-prefixed hex or decimal)
         - get_symbol_by_raw_name
         - get_symbol_by_name
         - scan data_vars for matching symbol name/raw_name
@@ -200,15 +206,12 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         if not bv:
             return None, None
         s = (ident or "").strip()
-        # Hex address
-        try:
-            if s.lower().startswith("0x"):
-                return int(s, 16), s
-            # bare hex
-            if all(c in "0123456789abcdefABCDEF" for c in s):
-                return int(s, 16), s
-        except Exception:
-            pass
+        address_error: AddressParseError | None = None
+        if is_address_literal(s):
+            try:
+                return parse_address(s), s
+            except AddressParseError as e:
+                address_error = e
         # Raw name
         try:
             get_raw = getattr(bv, "get_symbol_by_raw_name", None)
@@ -248,6 +251,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     continue
         except Exception:
             pass
+        if address_error is not None:
+            raise address_error
         return None, None
 
     def _c_escape(self, raw: bytes, limit: int | None = None) -> str:
@@ -354,7 +359,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            address_int = int(address, 16) if isinstance(address, str) else int(address)
+            address_int = parse_address(address)
             success = self.binary_ops.delete_comment(address_int)
             if success:
                 self._send_json_response(
@@ -371,8 +376,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     },
                     500,
                 )
-        except ValueError:
-            self._send_json_response({"error": "Invalid address format"}, 400)
+        except ValueError as e:
+            self._send_json_response({"error": str(e)}, 400)
 
     def _delete_function_comment(self, params: dict[str, Any]):
         function_name = params.get("name") or params.get("functionName")
@@ -609,21 +614,11 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         self._set_headers(content_type="text/plain", status_code=400)
                         self.wfile.write(b"Missing address parameter\n")
                         return
-                    # Parse address
                     try:
-                        addr = (
-                            int(address_str, 16)
-                            if address_str.startswith("0x")
-                            else int(
-                                address_str,
-                                16
-                                if all(c in "0123456789abcdefABCDEF" for c in address_str)
-                                else 10,
-                            )
-                        )
-                    except Exception:
+                        addr = parse_address(address_str)
+                    except ValueError as e:
                         self._set_headers(content_type="text/plain", status_code=400)
-                        self.wfile.write(b"Invalid address format; use hex like 0x401000\n")
+                        self.wfile.write(f"{e}\n".encode())
                         return
 
                     # Determine length
@@ -720,7 +715,12 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         self.wfile.write(b"Missing name parameter\n")
                         return
 
-                    addr, label = self._resolve_name_to_address(name)
+                    try:
+                        addr, label = self._resolve_name_to_address(name)
+                    except AddressParseError as e:
+                        self._set_headers(content_type="text/plain", status_code=400)
+                        self.wfile.write(f"{e}\n".encode())
+                        return
                     if addr is None:
                         self._set_headers(content_type="text/plain", status_code=404)
                         self.wfile.write(b"Symbol not found\n")
@@ -804,7 +804,11 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                             400,
                         )
                         return
-                    addr, label = self._resolve_name_to_address(ident)
+                    try:
+                        addr, label = self._resolve_name_to_address(ident)
+                    except AddressParseError as e:
+                        self._send_json_response({"error": str(e), "ident": ident}, 400)
+                        return
                     if addr is None:
                         self._send_json_response({"error": "Symbol not found", "ident": ident}, 404)
                         return
@@ -962,19 +966,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     self._send_json_response({"error": f"Invalid hex pattern: {ve}"}, 400)
                     return
 
-                def _parse_addr(val: str | None) -> int | None:
-                    if val is None or val == "":
-                        return None
-                    v = val.strip()
-                    if v.startswith("0x") or v.startswith("0X"):
-                        return int(v, 16)
-                    if any(c in "abcdefABCDEF" for c in v):
-                        return int(v, 16)
-                    return int(v, 10)
-
                 try:
-                    start_addr = _parse_addr(params.get("start"))
-                    end_addr = _parse_addr(params.get("end"))
+                    start_addr = parse_optional_address(params.get("start"), field="start")
+                    end_addr = parse_optional_address(params.get("end"), field="end")
                 except ValueError as ve:
                     self._send_json_response({"error": f"Invalid address: {ve}"}, 400)
                     return
@@ -1023,19 +1017,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
 
-                def _parse_addr_or_none(val: str | None) -> int | None:
-                    if val is None or val == "":
-                        return None
-                    v = val.strip()
-                    if v.startswith("0x") or v.startswith("0X"):
-                        return int(v, 16)
-                    if any(c in "abcdefABCDEF" for c in v):
-                        return int(v, 16)
-                    return int(v, 10)
-
                 try:
-                    start_addr = _parse_addr_or_none(params.get("start"))
-                    end_addr = _parse_addr_or_none(params.get("end"))
+                    start_addr = parse_optional_address(params.get("start"), field="start")
+                    end_addr = parse_optional_address(params.get("end"), field="end")
                 except ValueError as ve:
                     self._send_json_response({"error": f"Invalid address: {ve}"}, 400)
                     return
@@ -1106,19 +1090,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     self._send_json_response({"error": f"Invalid integer value: {ve}"}, 400)
                     return
 
-                def _parse_addr_or_none2(val: str | None) -> int | None:
-                    if val is None or val == "":
-                        return None
-                    v = val.strip()
-                    if v.startswith("0x") or v.startswith("0X"):
-                        return int(v, 16)
-                    if any(c in "abcdefABCDEF" for c in v):
-                        return int(v, 16)
-                    return int(v, 10)
-
                 try:
-                    start_addr = _parse_addr_or_none2(params.get("start"))
-                    end_addr = _parse_addr_or_none2(params.get("end"))
+                    start_addr = parse_optional_address(params.get("start"), field="start")
+                    end_addr = parse_optional_address(params.get("end"), field="end")
                 except ValueError as ve:
                     self._send_json_response({"error": f"Invalid address: {ve}"}, 400)
                     return
@@ -1170,15 +1144,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 here_val = 0
                 if here_str:
                     try:
-                        s = here_str.strip()
-                        if s.startswith("0x") or s.startswith("0X"):
-                            here_val = int(s, 16)
-                        elif any(c in "abcdefABCDEF" for c in s):
-                            here_val = int(s, 16)
-                        else:
-                            here_val = int(s, 10)
-                    except ValueError:
-                        self._send_json_response({"error": "Invalid 'here' address format"}, 400)
+                        here_val = parse_address(here_str, field="here")
+                    except ValueError as e:
+                        self._send_json_response({"error": str(e)}, 400)
                         return
                 try:
                     result = self.binary_ops.parse_expression(expr, here_val)
@@ -1370,20 +1338,14 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     return
 
                 try:
-                    # Convert hex string to integer
-                    if isinstance(address_str, str) and address_str.startswith("0x"):
-                        offset = int(address_str, 16)
-                    else:
-                        offset = int(address_str)
-
-                    # Add function to binary_operations.py
+                    offset = parse_address(address_str)
                     function_names = self.binary_ops.get_functions_containing_address(offset)
 
                     self._send_json_response({"address": hex(offset), "functions": function_names})
-                except ValueError:
+                except ValueError as e:
                     self._send_json_response(
                         {
-                            "error": "Invalid address format",
+                            "error": str(e),
                             "help": "Address must be a valid hexadecimal (0x...) or decimal number",
                             "received": address_str,
                         },
@@ -1476,7 +1438,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         return
 
                     try:
-                        address_int = int(address, 16) if isinstance(address, str) else int(address)
+                        address_int = parse_address(address)
                         comment = self.binary_ops.get_comment(address_int)
                         if comment is not None:
                             self._send_json_response(
@@ -1495,8 +1457,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                     "message": "No comment found at this address",
                                 }
                             )
-                    except ValueError:
-                        self._send_json_response({"error": "Invalid address format"}, 400)
+                    except ValueError as e:
+                        self._send_json_response({"error": str(e)}, 400)
                 elif self.command == "DELETE":
                     address = params.get("address")
                     if not address:
@@ -1511,7 +1473,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         return
 
                     try:
-                        address_int = int(address, 16) if isinstance(address, str) else int(address)
+                        address_int = parse_address(address)
                         success = self.binary_ops.delete_comment(address_int)
                         if success:
                             self._send_json_response(
@@ -1528,8 +1490,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                 },
                                 500,
                             )
-                    except ValueError:
-                        self._send_json_response({"error": "Invalid address format"}, 400)
+                    except ValueError as e:
+                        self._send_json_response({"error": str(e)}, 400)
                 else:  # POST
                     address = params.get("address")
                     comment = params.get("comment")
@@ -1545,7 +1507,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         return
 
                     try:
-                        address_int = int(address, 16) if isinstance(address, str) else int(address)
+                        address_int = parse_address(address)
                         success = self.binary_ops.set_comment(address_int, comment)
                         if success:
                             self._send_json_response(
@@ -1563,8 +1525,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                 },
                                 500,
                             )
-                    except ValueError:
-                        self._send_json_response({"error": "Invalid address format"}, 400)
+                    except ValueError as e:
+                        self._send_json_response({"error": str(e)}, 400)
 
             elif path == "/comment/function":
                 if self.command == "GET":
@@ -1673,7 +1635,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     return
 
                 try:
-                    address_int = int(address, 16) if isinstance(address, str) else int(address)
+                    address_int = parse_address(address)
                     comment = self.binary_ops.get_comment(address_int)
                     if comment is not None:
                         self._send_json_response(
@@ -1692,8 +1654,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                 "message": "No comment found at this address",
                             }
                         )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
 
             elif path == "/getFunctionComment":
                 function_name = params.get("name") or params.get("functionName")
@@ -1797,18 +1759,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     result = self.binary_ops.define_user_symbol(addr_int, name, kind)
@@ -1833,18 +1786,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     result = self.binary_ops.undefine_user_symbol(addr_int)
@@ -1897,18 +1841,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     result = self.binary_ops.define_user_data_var(addr_int, type_str)
@@ -1936,18 +1871,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     if path == "/readInt":
@@ -2050,18 +1976,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     result = self.binary_ops.get_data_var_at(addr_int)
@@ -2086,18 +2003,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     result = self.binary_ops.undefine_user_data_var(addr_int)
@@ -2213,18 +2121,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     result = self.binary_ops.add_tag(addr_int, tt_name, data_payload, kind)
@@ -2377,18 +2276,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 # If the caller didn't name a function, auto-resolve via the
                 # containing function so the agent doesn't have to wire that up
@@ -2456,18 +2346,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     idx_int = int(index_str)
@@ -2505,19 +2386,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
 
-                def _parse_addr_typed(val: str | None) -> int | None:
-                    if val is None or val == "":
-                        return None
-                    v = val.strip()
-                    if v.startswith("0x") or v.startswith("0X"):
-                        return int(v, 16)
-                    if any(c in "abcdefABCDEF" for c in v):
-                        return int(v, 16)
-                    return int(v, 10)
-
                 try:
-                    start_addr = _parse_addr_typed(params.get("start"))
-                    end_addr = _parse_addr_typed(params.get("end"))
+                    start_addr = parse_optional_address(params.get("start"), field="start")
+                    end_addr = parse_optional_address(params.get("end"), field="end")
                 except ValueError as ve:
                     self._send_json_response({"error": f"Invalid address: {ve}"}, 400)
                     return
@@ -2642,18 +2513,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    addr_int = (
-                        int(address_str, 16)
-                        if isinstance(address_str, str)
-                        and (
-                            address_str.startswith("0x")
-                            or address_str.startswith("0X")
-                            or any(c in "abcdefABCDEF" for c in address_str)
-                        )
-                        else int(address_str)
-                    )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr_int = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
                 try:
                     result = self.binary_ops.get_tags_at(addr_int)
@@ -2958,13 +2820,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 try:
-                    # Parse address
-                    if isinstance(address_str, str) and address_str.startswith("0x"):
-                        addr = int(address_str, 16)
-                    else:
-                        addr = int(address_str)
-                except Exception:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                    addr = parse_address(address_str)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
                     return
 
                 try:
@@ -3316,11 +3174,11 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     return
 
                 try:
-                    address_int = int(address, 16) if isinstance(address, str) else int(address)
+                    address_int = parse_address(address)
                     success = self.binary_ops.rename_data(address_int, new_name)
                     self._send_json_response({"success": success})
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
 
             elif path == "/comment":
                 if self.command == "GET":
@@ -3337,7 +3195,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         return
 
                     try:
-                        address_int = int(address, 16) if isinstance(address, str) else int(address)
+                        address_int = parse_address(address)
                         comment = self.binary_ops.get_comment(address_int)
                         if comment is not None:
                             self._send_json_response(
@@ -3356,8 +3214,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                     "message": "No comment found at this address",
                                 }
                             )
-                    except ValueError:
-                        self._send_json_response({"error": "Invalid address format"}, 400)
+                    except ValueError as e:
+                        self._send_json_response({"error": str(e)}, 400)
                 elif self.command == "DELETE":
                     address = params.get("address")
                     if not address:
@@ -3372,7 +3230,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         return
 
                     try:
-                        address_int = int(address, 16) if isinstance(address, str) else int(address)
+                        address_int = parse_address(address)
                         success = self.binary_ops.delete_comment(address_int)
                         if success:
                             self._send_json_response(
@@ -3389,8 +3247,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                 },
                                 500,
                             )
-                    except ValueError:
-                        self._send_json_response({"error": "Invalid address format"}, 400)
+                    except ValueError as e:
+                        self._send_json_response({"error": str(e)}, 400)
                 else:  # POST
                     address = params.get("address")
                     comment = params.get("comment")
@@ -3406,7 +3264,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         return
 
                     try:
-                        address_int = int(address, 16) if isinstance(address, str) else int(address)
+                        address_int = parse_address(address)
                         success = self.binary_ops.set_comment(address_int, comment)
                         if success:
                             self._send_json_response(
@@ -3424,8 +3282,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                 },
                                 500,
                             )
-                    except ValueError:
-                        self._send_json_response({"error": "Invalid address format"}, 400)
+                    except ValueError as e:
+                        self._send_json_response({"error": str(e)}, 400)
 
             elif path == "/comment/function":
                 if self.command == "GET":
@@ -3534,7 +3392,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     return
 
                 try:
-                    address_int = int(address, 16) if isinstance(address, str) else int(address)
+                    address_int = parse_address(address)
                     comment = self.binary_ops.get_comment(address_int)
                     if comment is not None:
                         self._send_json_response(
@@ -3553,8 +3411,8 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                                 "message": "No comment found at this address",
                             }
                         )
-                except ValueError:
-                    self._send_json_response({"error": "Invalid address format"}, 400)
+                except ValueError as e:
+                    self._send_json_response({"error": str(e)}, 400)
 
             elif path == "/getFunctionComment":
                 function_name = params.get("functionName") or params.get("name")
