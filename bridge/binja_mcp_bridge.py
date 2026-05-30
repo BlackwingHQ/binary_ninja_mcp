@@ -1508,6 +1508,148 @@ def set_function_inline(function: str, inline: bool) -> str:
 
 
 @mcp.tool()
+def get_symbols_by_type(
+    type: str,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int = 100,
+) -> list:
+    """
+    List symbols of a given type, optionally bounded by address range.
+
+    Use to get a focused slice of the symbol table without paginating
+    through `list_imports` / `list_exports` and filtering yourself.
+
+    Args:
+        type: Agent-friendly alias (`function`, `data`, `import`,
+            `import_data`, `import_address`, `external`, `library_function`,
+            `symbolic_function`, `label`) or a raw BN `SymbolType` enum
+            name (e.g. `"FunctionSymbol"`).
+        start: Optional starting address (hex or decimal).
+        end: Optional ending address (exclusive).
+        limit: Cap on results (default 100; 0 or negative = unlimited).
+
+    Returns:
+        List of "<address>\\t<name>" lines, or "(no symbols)" / an error.
+    """
+    if not type:
+        return ["Error: type is required"]
+    params: dict = {"type": type, "limit": limit}
+    if start is not None:
+        params["start"] = start
+    if end is not None:
+        params["end"] = end
+    data = get_json("getSymbolsByType", params)
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    syms = data.get("symbols", []) or []
+    if not syms:
+        return ["(no symbols)"]
+    return [f"{s.get('address')}\t{s.get('name')}" for s in syms]
+
+
+@mcp.tool()
+def get_ssa_var_uses(
+    function: str,
+    variable: str,
+    version: int = 0,
+    il_level: str = "hlil",
+) -> list:
+    """
+    SSA-precise use sites of a local variable inside a function.
+
+    Distinct from `get_var_uses`: that one returns all references to the
+    variable in any form; this one filters to a specific SSA version,
+    which lets you reason about one logical "version" of a value through
+    its uses (e.g. after a known definition you care about).
+
+    Args:
+        function: Function name or address.
+        variable: Local variable name.
+        version: SSA version (default 0 = the first definition).
+        il_level: "hlil" (default) or "mlil".
+
+    Returns:
+        List of "<address>  [<il_type>]  <expression>" lines, or
+        "(no uses)" / an error.
+    """
+    if not function or not variable:
+        return ["Error: function and variable are required"]
+    data = get_json(
+        "getSsaVarUses",
+        {
+            "function": function,
+            "variable": variable,
+            "version": str(int(version)),
+            "ilLevel": il_level,
+        },
+    )
+    if not data:
+        return ["Error: no response"]
+    if isinstance(data, dict) and data.get("error"):
+        return [f"Error: {data['error']}"]
+    if not isinstance(data, dict):
+        return [str(data)]
+    uses = data.get("uses", []) or []
+    if not uses:
+        return ["(no uses)"]
+    return [
+        f"{u.get('address')}  [{u.get('il_type')}]  {u.get('expression')}"
+        for u in uses
+    ]
+
+
+@mcp.tool()
+def get_ssa_var_definition(
+    function: str,
+    variable: str,
+    version: int = 0,
+    il_level: str = "hlil",
+) -> str:
+    """
+    SSA-precise definition site of a local variable inside a function.
+
+    SSA semantics guarantee at most one definition per (variable,
+    version), so the response is a single line (not a list).
+
+    Args:
+        function: Function name or address.
+        variable: Local variable name.
+        version: SSA version (default 0).
+        il_level: "hlil" (default) or "mlil".
+
+    Returns:
+        "<address>  [<il_type>]  <expression>" line, or
+        "(no definition)" / an error.
+    """
+    if not function or not variable:
+        return "Error: function and variable are required"
+    data = get_json(
+        "getSsaVarDefinition",
+        {
+            "function": function,
+            "variable": variable,
+            "version": str(int(version)),
+            "ilLevel": il_level,
+        },
+    )
+    if not data:
+        return "Error: no response"
+    if isinstance(data, dict) and data.get("error"):
+        return f"Error: {data['error']}"
+    if not isinstance(data, dict):
+        return str(data)
+    d = data.get("definition")
+    if d is None:
+        return "(no definition)"
+    return f"{d.get('address')}  [{d.get('il_type')}]  {d.get('expression')}"
+
+
+@mcp.tool()
 def get_var_uses(function: str, variable: str, il_level: str = "all") -> list:
     """
     Find every use site of a local variable inside a function.

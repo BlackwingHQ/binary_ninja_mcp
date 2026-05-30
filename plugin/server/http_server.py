@@ -2333,6 +2333,122 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     bn.log_error(f"Error handling getParameterAt: {e}")
                     self._send_json_response({"error": str(e)}, 500)
 
+            elif path == "/getSymbolsByType":
+                sym_type = (
+                    params.get("type")
+                    or params.get("symbolType")
+                    or params.get("kind")
+                )
+                if not sym_type:
+                    self._send_json_response(
+                        {
+                            "error": "Missing type parameter",
+                            "help": (
+                                "Required: type (e.g. 'function', 'data', 'import', "
+                                "'external', or any BN SymbolType enum name). "
+                                "Optional: start, end, limit (default 100; 0 or negative = unlimited)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+
+                def _parse_addr_typed(val: str | None) -> int | None:
+                    if val is None or val == "":
+                        return None
+                    v = val.strip()
+                    if v.startswith("0x") or v.startswith("0X"):
+                        return int(v, 16)
+                    if any(c in "abcdefABCDEF" for c in v):
+                        return int(v, 16)
+                    return int(v, 10)
+
+                try:
+                    start_addr = _parse_addr_typed(params.get("start"))
+                    end_addr = _parse_addr_typed(params.get("end"))
+                except ValueError as ve:
+                    self._send_json_response({"error": f"Invalid address: {ve}"}, 400)
+                    return
+
+                lim = parse_int_or_default(params.get("limit"), 100)
+                try:
+                    result = self.binary_ops.get_symbols_by_type(
+                        sym_type, start=start_addr, end=end_addr, limit=lim
+                    )
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 400)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling getSymbolsByType: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
+            elif path in ("/getSsaVarUses", "/getSsaVarDefinition"):
+                fn_ident = (
+                    params.get("functionAddress")
+                    or params.get("address")
+                    or params.get("function")
+                    or params.get("functionName")
+                    or params.get("name")
+                )
+                var_name = (
+                    params.get("variableName")
+                    or params.get("variable")
+                    or params.get("var")
+                )
+                version_raw = (
+                    params.get("version")
+                    or params.get("ssaVersion")
+                    or "0"
+                )
+                il_level = (
+                    params.get("ilLevel")
+                    or params.get("il_level")
+                    or params.get("level")
+                    or "hlil"
+                )
+                if not fn_ident or not var_name:
+                    self._send_json_response(
+                        {
+                            "error": "Missing parameters",
+                            "help": (
+                                "Required: function (or functionName/address) and "
+                                "variable (or variableName/var). Optional: version "
+                                "(SSA version, default 0), ilLevel (hlil|mlil; default hlil)."
+                            ),
+                            "received": params,
+                        },
+                        400,
+                    )
+                    return
+                try:
+                    version_int = int(version_raw)
+                except ValueError:
+                    self._send_json_response(
+                        {"error": "Invalid version — must be a non-negative integer"},
+                        400,
+                    )
+                    return
+                try:
+                    if path == "/getSsaVarUses":
+                        result = self.binary_ops.get_ssa_var_uses(
+                            fn_ident, var_name, version_int, il_level
+                        )
+                    else:
+                        result = self.binary_ops.get_ssa_var_definition(
+                            fn_ident, var_name, version_int, il_level
+                        )
+                    self._send_json_response(result)
+                except ValueError as ve:
+                    self._send_json_response({"error": str(ve)}, 404)
+                except RuntimeError as re_err:
+                    self._send_json_response({"error": str(re_err)}, 500)
+                except Exception as e:
+                    bn.log_error(f"Error handling {path}: {e}")
+                    self._send_json_response({"error": str(e)}, 500)
+
             elif path == "/getVarUses" or path == "/getVarDefinitions":
                 fn_ident = (
                     params.get("functionAddress")

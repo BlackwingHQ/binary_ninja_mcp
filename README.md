@@ -205,6 +205,9 @@ The following table lists the available MCP functions for use:
 | `set_function_can_return(function, can_return)`                      | Override BN's no-return inference. Wrong `can_return` corrupts the CFG of every caller; this is high-impact. |
 | `set_function_return_type(function, type)`                           | Set just the return type without rewriting the full prototype. `type` is C-style.                            |
 | `set_function_inline(function, inline)`                              | Force or un-force BN's inline-during-analysis behavior. Useful for small helpers.                             |
+| `get_symbols_by_type(type, start, end, limit)`                       | List symbols of a given type — agent-friendly aliases (`function`, `data`, `import`, `external`, ...) or raw BN `SymbolType` enum names. Optional address range. |
+| `get_ssa_var_uses(function, variable, version, il_level)`            | SSA-precise use sites of a variable. `version` is the SSA version (default 0); `il_level` is `hlil` (default) or `mlil`. |
+| `get_ssa_var_definition(function, variable, version, il_level)`      | Single SSA definition site of a variable (SSA guarantees at most one).                                       |
 | `get_var_uses(function, variable, il_level)`                         | Find every use site of a local variable inside a function. `il_level` filters to `all`/`hlil`/`mlil`/`llil`. |
 | `get_var_definitions(function, variable, il_level)`                  | Find every definition (write) site of a local variable inside a function.                                     |
 | `get_parameter_at(address, index, function)`                         | Resolve the i-th argument at a callsite as an MLIL expression (auto-resolves containing function and callee name). |
@@ -264,6 +267,9 @@ These are the list of HTTP endpoints that can be called:
 - `/setFunctionCanReturn?function=<name|addr>&canReturn=<true|false>`: Override BN's no-return inference. Accepts `true`/`false`/`1`/`0`/`yes`/`no`.
 - `/setFunctionReturnType?function=<name|addr>&type=<cType>`: Set the return type only (parsed via `parse_type_string`).
 - `/setFunctionInline?function=<name|addr>&inline=<true|false>`: Toggle `inline_during_analysis`.
+- `/getSymbolsByType?type=<alias|enum>&start=<addr>&end=<addr>&limit=<n>`: List symbols of a given type. Aliases: `function`, `data`, `import`, `import_data`, `import_address`, `external`, `library_function`, `symbolic_function`, `label`. Raw BN `SymbolType` enum names also accepted.
+- `/getSsaVarUses?function=<name|addr>&variable=<name>&version=<n>&ilLevel=<hlil|mlil>`: SSA-precise use sites of a variable at the given version (default 0).
+- `/getSsaVarDefinition?function=<name|addr>&variable=<name>&version=<n>&ilLevel=<hlil|mlil>`: Single SSA definition for the variable at that version.
 - `/getVarUses?function=<name|addr>&variable=<name>&ilLevel=<all|hlil|mlil|llil>`: List use sites of a local variable inside a function. Each entry includes the address, BN's il_type, and the HLIL snippet when available.
 - `/getVarDefinitions?function=<name|addr>&variable=<name>&ilLevel=<all|hlil|mlil|llil>`: Same shape as `/getVarUses` but for definition (write) sites.
 - `/getParameterAt?address=<callsite>&index=<n>&function=<name|addr>`: Resolve the i-th argument at a callsite. `function` is optional. Returns `{status, function, address, index, callee, param_count, expression}`.

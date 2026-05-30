@@ -4023,6 +4023,257 @@ class BinaryOperations:
             "registers": names,
         }
 
+    # ---------------- Typed symbol queries ----------------
+    _SYMBOL_TYPE_ALIASES: dict[str, str] = {
+        "function": "FunctionSymbol",
+        "data": "DataSymbol",
+        "import": "ImportedFunctionSymbol",
+        "import_function": "ImportedFunctionSymbol",
+        "imported_function": "ImportedFunctionSymbol",
+        "import_data": "ImportedDataSymbol",
+        "imported_data": "ImportedDataSymbol",
+        "import_address": "ImportAddressSymbol",
+        "external": "ExternalSymbol",
+        "library_function": "LibraryFunctionSymbol",
+        "symbolic_function": "SymbolicFunctionSymbol",
+        "label": "LocalLabelSymbol",
+        "local_label": "LocalLabelSymbol",
+    }
+
+    def get_symbols_by_type(
+        self,
+        symbol_type: str,
+        start: int | None = None,
+        end: int | None = None,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """List symbols of a given type, optionally bounded by address range.
+
+        Args:
+            symbol_type: One of the agent-friendly aliases (``function``,
+                ``data``, ``import``, ``import_data``, ``import_address``,
+                ``external``, ``library_function``, ``symbolic_function``,
+                ``label``) or a raw BN ``SymbolType`` enum name
+                (e.g. ``"FunctionSymbol"``).
+            start: Optional inclusive starting address. Defaults to view start.
+            end: Optional exclusive ending address. Defaults to view end.
+            limit: Cap on results. 0 or negative means "no cap".
+
+        Returns:
+            Dict with the resolved BN type name, range, count, and a
+            ``symbols`` list of ``{address, name, raw_name, full_name, type}``.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the symbol-type alias is unknown.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        bv = self._current_view
+
+        clean_kind = (symbol_type or "").strip()
+        if not clean_kind:
+            raise ValueError("Empty symbol_type")
+
+        resolved_name = self._SYMBOL_TYPE_ALIASES.get(clean_kind.lower(), clean_kind)
+        sym_type_enum = getattr(bn, "SymbolType", None)
+        if sym_type_enum is None:
+            raise RuntimeError("SymbolType enum unavailable in this BN version")
+        sym_type = getattr(sym_type_enum, resolved_name, None)
+        if sym_type is None:
+            known = ", ".join(sorted(set(self._SYMBOL_TYPE_ALIASES.values())))
+            raise ValueError(
+                f"Unknown symbol type {symbol_type!r}. Aliases: "
+                f"{', '.join(sorted(self._SYMBOL_TYPE_ALIASES))}; "
+                f"raw enum names also accepted ({known})."
+            )
+
+        getter = getattr(bv, "get_symbols_of_type", None)
+        if not callable(getter):
+            raise RuntimeError(
+                "BinaryView.get_symbols_of_type is unavailable in this BN version"
+            )
+        try:
+            raw_symbols = list(getter(sym_type) or [])
+        except Exception as e:
+            raise RuntimeError(f"get_symbols_of_type failed: {e!s}")
+
+        if start is None:
+            start = int(getattr(bv, "start", 0))
+        view_end_attr = getattr(bv, "end", None)
+        view_end = int(view_end_attr) if view_end_attr is not None else None
+        if end is None:
+            end = view_end
+
+        symbols: list[dict[str, Any]] = []
+        for sym in raw_symbols:
+            try:
+                addr_attr = getattr(sym, "address", None)
+                if addr_attr is None:
+                    continue
+                addr = int(addr_attr)
+                if start is not None and addr < int(start):
+                    continue
+                if end is not None and addr >= int(end):
+                    continue
+                symbols.append(
+                    {
+                        "address": hex(addr),
+                        "name": getattr(sym, "name", None),
+                        "raw_name": getattr(sym, "raw_name", None),
+                        "full_name": getattr(sym, "full_name", None),
+                        "type": resolved_name,
+                    }
+                )
+                if 0 < limit <= len(symbols):
+                    break
+            except Exception:
+                continue
+
+        return {
+            "type": resolved_name,
+            "start": hex(int(start)) if start is not None else None,
+            "end": hex(int(end)) if end is not None else None,
+            "count": len(symbols),
+            "limit": limit,
+            "symbols": symbols,
+        }
+
+    # ---------------- SSA data flow ----------------
+    def _serialize_il_instr(
+        self, instr: Any, kind: str
+    ) -> dict[str, Any]:
+        """Render a HLIL/MLIL instruction as a JSON-friendly dict."""
+        try:
+            addr_attr = getattr(instr, "address", None)
+            return {
+                "address": hex(int(addr_attr)) if addr_attr is not None else None,
+                "il_type": str(getattr(instr, "il_type", None)) or None,
+                "expression": str(instr),
+                "kind": kind,
+            }
+        except Exception:
+            return {"kind": kind, "raw": str(instr)}
+
+    def _il_function(self, func: Any, il_level: str) -> Any | None:
+        norm = (il_level or "hlil").strip().lower()
+        if norm == "mlil":
+            return getattr(func, "mlil", None)
+        return getattr(func, "hlil", None)
+
+    def get_ssa_var_uses(
+        self,
+        function_ident: str | int,
+        var_name: str,
+        version: int = 0,
+        il_level: str = "hlil",
+    ) -> dict[str, Any]:
+        """Return SSA-precise use sites of a variable inside a function.
+
+        Args:
+            function_ident: Function name or address.
+            var_name: Local variable name.
+            version: SSA version of the variable. Default 0 (the first
+                definition's outgoing value).
+            il_level: ``"hlil"`` (default) or ``"mlil"``.
+
+        Returns:
+            Dict with function context, variable, SSA version, IL level,
+            count, and a ``uses`` list of ``{address, il_type, expression, kind}``.
+
+        Raises:
+            RuntimeError: If no binary is loaded.
+            ValueError: If the function/variable can't be found, the IL
+                function isn't available, or BN refuses the call.
+        """
+        func, var = self._resolve_func_and_var(function_ident, var_name)
+        il_func = self._il_function(func, il_level)
+        if il_func is None:
+            raise ValueError(
+                f"IL function ({il_level}) unavailable for "
+                f"{getattr(func, 'name', '?')} — analysis may not have completed"
+            )
+        ssa_ctor = getattr(bn, "SSAVariable", None)
+        if ssa_ctor is None:
+            raise RuntimeError("SSAVariable is unavailable in this BN version")
+        try:
+            ssa_var = ssa_ctor(var, int(version))
+        except Exception as e:
+            raise ValueError(
+                f"Failed to construct SSAVariable for {var_name!r} v{version}: {e!s}"
+            )
+
+        getter = getattr(il_func, "get_ssa_var_uses", None)
+        if not callable(getter):
+            raise RuntimeError(
+                f"{il_level.upper()}.get_ssa_var_uses is unavailable in this BN version"
+            )
+        try:
+            raw = list(getter(ssa_var) or [])
+        except Exception as e:
+            raise ValueError(f"Failed to get SSA uses: {e!s}")
+        uses = [self._serialize_il_instr(i, kind="use") for i in raw]
+        return {
+            "function": getattr(func, "name", None),
+            "function_address": hex(int(getattr(func, "start", 0))),
+            "variable": (var_name or "").strip(),
+            "version": int(version),
+            "il_level": il_level,
+            "count": len(uses),
+            "uses": uses,
+        }
+
+    def get_ssa_var_definition(
+        self,
+        function_ident: str | int,
+        var_name: str,
+        version: int = 0,
+        il_level: str = "hlil",
+    ) -> dict[str, Any]:
+        """Return the SSA definition site of a variable inside a function.
+
+        SSA semantics guarantee at most one definition per (variable,
+        version), so the response carries a single ``definition`` field
+        rather than a list.
+        """
+        func, var = self._resolve_func_and_var(function_ident, var_name)
+        il_func = self._il_function(func, il_level)
+        if il_func is None:
+            raise ValueError(
+                f"IL function ({il_level}) unavailable for "
+                f"{getattr(func, 'name', '?')} — analysis may not have completed"
+            )
+        ssa_ctor = getattr(bn, "SSAVariable", None)
+        if ssa_ctor is None:
+            raise RuntimeError("SSAVariable is unavailable in this BN version")
+        try:
+            ssa_var = ssa_ctor(var, int(version))
+        except Exception as e:
+            raise ValueError(
+                f"Failed to construct SSAVariable for {var_name!r} v{version}: {e!s}"
+            )
+
+        getter = getattr(il_func, "get_ssa_var_definition", None)
+        if not callable(getter):
+            raise RuntimeError(
+                f"{il_level.upper()}.get_ssa_var_definition is unavailable in this BN version"
+            )
+        try:
+            raw = getter(ssa_var)
+        except Exception as e:
+            raise ValueError(f"Failed to get SSA definition: {e!s}")
+        definition = (
+            self._serialize_il_instr(raw, kind="definition") if raw is not None else None
+        )
+        return {
+            "function": getattr(func, "name", None),
+            "function_address": hex(int(getattr(func, "start", 0))),
+            "variable": (var_name or "").strip(),
+            "version": int(version),
+            "il_level": il_level,
+            "definition": definition,
+        }
+
     # ---------------- Variable data flow ----------------
     def _serialize_var_refs(
         self,
