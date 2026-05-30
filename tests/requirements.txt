@@ -1,0 +1,13 @@
+# Unit test dependencies.
+#
+# `requests` and `mcp` are needed because the bridge module imports them
+# at module load time (the bridge file is loaded under test to verify
+# its pure formatters and response-wrapping helpers).
+#
+# `binaryninja` is intentionally NOT listed: it ships with the Binary
+# Ninja install and is exposed to the test interpreter via a `.pth`
+# file. See `scripts/install_binaryninja_pth.py` for a helper that
+# drops the `.pth` into a virtualenv.
+pytest>=8.0
+requests>=2.32
+mcp[cli]>=1.6

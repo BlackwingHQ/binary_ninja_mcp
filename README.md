@@ -11,12 +11,6 @@ This repository contains a Binary Ninja plugin, MCP server, and bridge that enab
 - Support for every MCP client (Cline, Claude desktop, Roo Code, etc.)
 - Open multiple binaries and switch the active target automatically
 
-## Examples
-
-### Solving a CTF Challenge
-
-Check out [this demo video on YouTube](https://www.youtube.com/watch?v=0ffMHH39L_M) that uses the extension to solve a CTF challenge.
-
 ## Components
 
 This repository contains two separate components:
@@ -321,15 +315,26 @@ Format code:
 ruff format .
 ```
 
-#### GitHub Actions
+### Tests
 
-A GitHub Action workflow (`.github/workflows/lint-format.yml`) automatically runs Ruff on:
+Unit tests live in `tests/`. They run outside Binary Ninja against the system Python's `binaryninja` import, with no live MCP/HTTP traffic.
 
-- Every push to the `main` branch
-- Every pull request targeting the `main` branch
+#### One-time setup
 
-The workflow will fail if there are linting errors or formatting issues, ensuring code quality in CI.
+A virtualenv is the recommended way to run the tests. The tests need `binaryninja` to be importable in the venv too — Binary Ninja exposes it via a `.pth` file in the user-site directory. The helper script below drops an equivalent `.pth` into the venv.
 
-## Contributing
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r tests/requirements.txt
+python3 scripts/install_binaryninja_pth.py .venv
+```
 
-Contributions are welcome. Please feel free to submit a pull request.
+The `install_binaryninja_pth.py` script auto-detects the Binary Ninja Python folder (asks the system interpreter where `binaryninja` lives, or falls back to the OS-standard install location). Pass `--binja-python <path>` to override.
+
+#### Running tests
+
+`scripts/check.sh` runs the linter and test suite.
+
+```bash
+scripts/check.sh
+```
