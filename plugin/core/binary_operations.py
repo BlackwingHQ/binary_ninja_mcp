@@ -4636,14 +4636,19 @@ class BinaryOperations:
         }
 
     # ---------------- Tags ----------------
-    def _serialize_tag(self, tag: Any, kind: str) -> dict[str, Any]:
-        """Render a Tag into a JSON-friendly dict; tolerant of API drift."""
+    def _serialize_tag(self, tag: Any, kind: str, addr: int | None = None) -> dict[str, Any]:
+        """Render a Tag into a JSON-friendly dict.
+
+        BN's `Tag` class only carries `type`, `data`, and `id`; the
+        address is implicit in how the caller looked it up, so it
+        must be passed in (or left None for function-scope tags
+        which apply to the whole function).
+        """
         try:
             type_obj = getattr(tag, "type", None)
             type_name = getattr(type_obj, "name", None) if type_obj else None
             icon = getattr(type_obj, "icon", None) if type_obj else None
             data = getattr(tag, "data", None)
-            addr = getattr(tag, "address", None)
             return {
                 "type": type_name,
                 "icon": icon,
@@ -4823,24 +4828,22 @@ class BinaryOperations:
             else:
                 norm_kind = "data"
 
+        # `_resolve_tag_type` auto-creates the tag type if missing; we
+        # only need its name string for BN's `add_tag` APIs.
         tt = self._resolve_tag_type(tag_type, auto_create=True)
+        tt_name = getattr(tt, "name", tag_type)
 
         try:
             if norm_kind == "data":
-                creator = getattr(bv, "create_user_data_tag", None)
-                if not callable(creator):
-                    raise ValueError("create_user_data_tag unavailable in this BN version")
-                creator(addr, tt, payload, False)
+                # `BinaryView.add_tag(addr, tag_type_name, data, user=True)`
+                bv.add_tag(addr, tt_name, payload, user=True)
             elif norm_kind == "function":
                 if not containing_funcs:
                     raise ValueError(f"No function at {hex(addr)} for kind='function'")
                 func = containing_funcs[0]
-                creator = getattr(func, "create_user_function_tag", None)
-                if not callable(creator):
-                    raise ValueError(
-                        "Function.create_user_function_tag unavailable in this BN version"
-                    )
-                creator(tt, payload, False)
+                # `Function.add_tag(tag_type, data)` — omit `addr` to
+                # tag the whole function rather than a specific insn.
+                func.add_tag(tt_name, payload)
             else:  # "address"
                 if not containing_funcs:
                     raise ValueError(
@@ -4848,12 +4851,9 @@ class BinaryOperations:
                         "use kind='data' for data-section tags."
                     )
                 func = containing_funcs[0]
-                creator = getattr(func, "create_user_address_tag", None)
-                if not callable(creator):
-                    raise ValueError(
-                        "Function.create_user_address_tag unavailable in this BN version"
-                    )
-                creator(addr, tt, payload, False)
+                # `Function.add_tag(tag_type, data, addr=addr)` — the
+                # presence of `addr` is what makes it an address tag.
+                func.add_tag(tt_name, payload, addr=addr)
         except ValueError:
             raise
         except Exception as e:
@@ -4863,7 +4863,7 @@ class BinaryOperations:
             "status": "ok",
             "address": hex(addr),
             "kind": norm_kind,
-            "tag_type": getattr(tt, "name", tag_type),
+            "tag_type": tt_name,
             "data": payload,
         }
 
@@ -4888,37 +4888,37 @@ class BinaryOperations:
         address_tags: list[dict[str, Any]] = []
         function_tags: list[dict[str, Any]] = []
 
-        # Data tags at this address (only meaningful for data-section addrs,
-        # but BN returns empty otherwise, so we always ask).
+        # Data tags at this address. `bv.tags_for_data` yields
+        # `(addr, Tag)` tuples for every data tag in the view; filter
+        # by address. (There's no per-address data-tag getter on this
+        # BN version — `get_user_data_tags_at` doesn't exist.)
         try:
-            getter = getattr(bv, "get_user_data_tags_at", None)
-            if callable(getter):
-                for tag in getter(addr) or []:
-                    data_tags.append(self._serialize_tag(tag, "data"))
+            for entry in getattr(bv, "tags_for_data", None) or []:
+                try:
+                    t_addr, tag = entry
+                except (TypeError, ValueError):
+                    continue
+                if int(t_addr) == addr:
+                    data_tags.append(self._serialize_tag(tag, "data", int(t_addr)))
         except Exception:
             pass
 
-        # In-function tags. Use the first containing function for address-tag
-        # lookup; function tags come from that function too.
+        # In-function tags. Use `get_tags_at(addr)` for address-scoped
+        # tags and `get_function_tags()` for whole-function tags —
+        # `func.tags` returns `(arch, addr, Tag)` tuples and is the
+        # wrong shape to feed `_serialize_tag` directly.
         try:
             container_getter = getattr(bv, "get_functions_containing", None)
             containing = list(container_getter(addr) or []) if callable(container_getter) else []
             for func in containing:
                 try:
-                    a_getter = getattr(func, "get_address_tags_at", None)
-                    if callable(a_getter):
-                        for tag in a_getter(addr) or []:
-                            address_tags.append(self._serialize_tag(tag, "address"))
+                    for tag in func.get_tags_at(addr) or []:
+                        address_tags.append(self._serialize_tag(tag, "address", addr))
                 except Exception:
                     pass
                 try:
-                    f_tags = getattr(func, "function_tags", None)
-                    if f_tags is None:
-                        # Older BN: tags attribute / get_function_tags()
-                        f_tags = getattr(func, "tags", None)
-                    if f_tags:
-                        for tag in list(f_tags):
-                            function_tags.append(self._serialize_tag(tag, "function"))
+                    for tag in func.get_function_tags() or []:
+                        function_tags.append(self._serialize_tag(tag, "function", None))
                 except Exception:
                     pass
         except Exception:
