@@ -2,14 +2,16 @@
 /getFunctionMetadata, /functionAt, /getCallers, /getCallees.
 
 The fixture binary lays out a 1-level call graph: an entry function
-(named `_start` by BN, with `_main` as an alias symbol) calls
-`_compute_secret`, `_printf`, and `_atoi`. Those four are the entire
-function inventory, which keeps assertions about lookups and call
-edges deterministic.
+calls `_compute_secret`, `_printf`, and `_atoi`. Several extra
+helper functions (`_task_priority`, `_dispatch`, ...) exist to
+exercise type-graph and symbol tests but are unreachable from main.
+Addresses come from the `anchors` session fixture so this file
+stays stable across rebuilds of `constructs`.
 """
 
-FIXTURE_FUNCTION_NAMES = {"_compute_secret", "_start", "_printf", "_atoi"}
-COMPUTE_SECRET_ADDR = 0x100000460
+# The minimum set of names every build must surface — used as a
+# subset check so adding helpers to the fixture doesn't break tests.
+FIXTURE_FUNCTION_NAMES = {"_compute_secret", "_printf", "_atoi"}
 
 
 # ---------- /methods ----------
@@ -113,13 +115,13 @@ def test_function_metadata_by_name(binja_session, base_url):
     assert meta["parameter_count"] == 1
 
 
-def test_function_metadata_by_address_matches_by_name(binja_session, base_url):
+def test_function_metadata_by_address_matches_by_name(binja_session, base_url, anchors):
     by_name = binja_session.get(
         f"{base_url}/getFunctionMetadata", params={"function": "_compute_secret"}, timeout=5
     ).json()
     by_addr = binja_session.get(
         f"{base_url}/getFunctionMetadata",
-        params={"function": f"0x{COMPUTE_SECRET_ADDR:x}"},
+        params={"function": anchors["compute_secret"]},
         timeout=5,
     ).json()
     assert by_name == by_addr
@@ -147,26 +149,26 @@ def test_function_metadata_unknown_function_404(binja_session, base_url):
 # ---------- /functionAt ----------
 
 
-def test_function_at_function_start_hex(binja_session, base_url):
+def test_function_at_function_start_hex(binja_session, base_url, anchors):
     r = binja_session.get(
-        f"{base_url}/functionAt", params={"address": f"0x{COMPUTE_SECRET_ADDR:x}"}, timeout=5
+        f"{base_url}/functionAt", params={"address": anchors["compute_secret"]}, timeout=5
     )
     r.raise_for_status()
     assert r.json()["functions"] == ["_compute_secret"]
 
 
-def test_function_at_function_start_decimal(binja_session, base_url):
-    r = binja_session.get(
-        f"{base_url}/functionAt", params={"address": str(COMPUTE_SECRET_ADDR)}, timeout=5
-    )
+def test_function_at_function_start_decimal(binja_session, base_url, anchors):
+    addr_dec = str(int(anchors["compute_secret"], 16))
+    r = binja_session.get(f"{base_url}/functionAt", params={"address": addr_dec}, timeout=5)
     r.raise_for_status()
     assert r.json()["functions"] == ["_compute_secret"]
 
 
-def test_function_at_mid_function_returns_containing_function(binja_session, base_url):
+def test_function_at_mid_function_returns_containing_function(binja_session, base_url, anchors):
     """An address inside a function (not at its start) should still
     resolve to that function."""
-    mid_addr = COMPUTE_SECRET_ADDR + 0x10  # safely inside _compute_secret
+    cs_int = int(anchors["compute_secret"], 16)
+    mid_addr = cs_int + 0x10  # safely inside _compute_secret
     r = binja_session.get(
         f"{base_url}/functionAt", params={"address": f"0x{mid_addr:x}"}, timeout=5
     )
@@ -185,16 +187,20 @@ def test_function_at_non_function_address_empty(binja_session, base_url):
 # ---------- /getCallers ----------
 
 
-def test_get_callers_finds_caller(binja_session, base_url):
-    """`_compute_secret` is called from the entry function (which BN
-    has named `_start`)."""
+def test_get_callers_finds_caller(binja_session, base_url, anchors):
+    """`_compute_secret` is called from the entry function. Compare
+    by address — BN's function-name policy and nm's symbol policy
+    can disagree (`_start` vs `_main`) for the same address, and
+    that disagreement isn't the contract this test is about."""
     r = binja_session.get(
         f"{base_url}/getCallers", params={"identifiers": "_compute_secret"}, timeout=5
     )
     r.raise_for_status()
     result = r.json()["results"][0]
-    caller_names = [c["name"] for c in result["callers"]]
-    assert "_start" in caller_names, f"missing _start in callers: {caller_names}"
+    caller_addrs = [c["address"] for c in result["callers"]]
+    assert anchors["main"] in caller_addrs, (
+        f"missing entry function ({anchors['main']}) in callers: {result['callers']}"
+    )
 
 
 def test_get_callers_includes_caller_site_addresses(binja_session, base_url):

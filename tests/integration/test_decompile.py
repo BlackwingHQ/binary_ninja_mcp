@@ -5,12 +5,10 @@ The fixture's `_compute_secret` is a small loop summing `i * 7` for
 `result`, `* 7`), a multi-block CFG for MLIL/LLIL coverage, and an
 SSA form that introduces phi nodes for the loop variables.
 
-The entry function (which BN names `_start`; `_main` is an alias)
-forwards to `atoi`, `compute_secret`, and `printf` — useful as a
-multi-callee target for /decompile assertions.
+The entry function forwards to `atoi`, `compute_secret`, and
+`printf` — useful as a multi-callee target for /decompile assertions.
+Addresses come from the `anchors` session fixture.
 """
-
-COMPUTE_SECRET_ADDR_HEX = "0x100000460"
 
 
 # ---------- /decompile ----------
@@ -28,20 +26,22 @@ def test_decompile_returns_function_body(binja_session, base_url):
     assert "return result" in src
 
 
-def test_decompile_response_includes_function_block(binja_session, base_url):
+def test_decompile_response_includes_function_block(binja_session, base_url, anchors):
     """The endpoint bundles the function's metadata alongside the
     source text so callers can confirm what they actually got back."""
     r = binja_session.get(f"{base_url}/decompile", params={"name": "_compute_secret"}, timeout=30)
     r.raise_for_status()
     fn = r.json().get("function") or {}
     assert fn.get("name") == "_compute_secret"
-    assert fn.get("address") == COMPUTE_SECRET_ADDR_HEX
+    assert fn.get("address") == anchors["compute_secret"]
 
 
-def test_decompile_entry_function_references_callees(binja_session, base_url):
+def test_decompile_entry_function_references_callees(binja_session, base_url, anchors):
     """The entry function calls compute_secret, printf, and atoi. Each
     should appear as a call expression in the decompiled output."""
-    r = binja_session.get(f"{base_url}/decompile", params={"name": "_main"}, timeout=30)
+    r = binja_session.get(
+        f"{base_url}/decompile", params={"name": anchors["main_name"]}, timeout=30
+    )
     r.raise_for_status()
     src = r.json().get("decompiled", "")
     for callee in ("_compute_secret", "_printf", "_atoi"):
@@ -124,7 +124,7 @@ def test_il_mlil_ssa_includes_phi_nodes(binja_session, base_url):
     assert "ϕ" in il
 
 
-def test_il_lookup_by_hex_address(binja_session, base_url):
+def test_il_lookup_by_hex_address(binja_session, base_url, anchors):
     """Address-based lookup must return the same body as name-based
     lookup for the same function."""
     by_name = binja_session.get(
@@ -132,7 +132,7 @@ def test_il_lookup_by_hex_address(binja_session, base_url):
     ).json()["il"]
     by_addr = binja_session.get(
         f"{base_url}/il",
-        params={"address": COMPUTE_SECRET_ADDR_HEX, "view": "hlil"},
+        params={"address": anchors["compute_secret"], "view": "hlil"},
         timeout=10,
     ).json()["il"]
     assert by_name == by_addr

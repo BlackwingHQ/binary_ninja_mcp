@@ -5,28 +5,22 @@ These all return `{count, matches}` (find_*) or a resolved address
 record (parseExpression). The find_* endpoints accept optional
 `start` / `end` bounds (hex or decimal) and a `limit` cap.
 
-Anchor data in the fixture:
-  - 0x100000460 — first instruction of `_compute_secret` on arm64,
-    encoded as the byte sequence `ff 43 00 d1`.
-  - 0x100000578 — the `"usage: %s <n>\\n"` format string in __cstring.
-  - 0x100000500 — inside `_start`, where that format string is loaded
-    (the literal appears in the lea'd address so /findText sees it).
+Addresses come from the `anchors` session fixture, except the
+prologue byte pattern itself — `ff 43 00 d1` is the arm64 encoding
+of `sub sp, sp, #0x10` and is independent of where the function
+ends up loaded.
 """
 
 PROLOGUE_BYTES = "ff 43 00 d1"
-PROLOGUE_ADDR = "0x100000460"
-USAGE_STRING_ADDR = "0x100000578"
-COMPUTE_SECRET_ADDR_HEX = "0x100000460"
-ENTRY_FN_ADDR_HEX = "0x1000004c4"
 
 
 # ---------- /findBytes ----------
 
 
-def test_find_bytes_locates_prologue(binja_session, base_url):
+def test_find_bytes_locates_prologue(binja_session, base_url, anchors):
     r = binja_session.get(
         f"{base_url}/findBytes",
-        params={"pattern": PROLOGUE_BYTES, "limit": 10},
+        params={"pattern": PROLOGUE_BYTES, "limit": 50},
         timeout=10,
     )
     r.raise_for_status()
@@ -34,10 +28,11 @@ def test_find_bytes_locates_prologue(binja_session, base_url):
     assert body["pattern"] == "ff4300d1"  # spaces are stripped
     assert body["count"] >= 1
     addrs = {m["address"] for m in body["matches"]}
-    assert PROLOGUE_ADDR in addrs
-    # When the match lies inside a function, the response surfaces the
-    # function name so callers don't have to make a second round trip.
-    hit = next(m for m in body["matches"] if m["address"] == PROLOGUE_ADDR)
+    # `_compute_secret` definitely opens with this prologue; other
+    # helpers might too (every arm64 `sub sp, sp, #0x10` encodes the
+    # same way), so use `in` rather than equality.
+    assert anchors["compute_secret"] in addrs
+    hit = next(m for m in body["matches"] if m["address"] == anchors["compute_secret"])
     assert hit["function"] == "_compute_secret"
 
 
@@ -65,32 +60,42 @@ def test_find_bytes_no_match_returns_empty(binja_session, base_url):
     assert body["matches"] == []
 
 
-def test_find_bytes_respects_end_bound(binja_session, base_url):
+def test_find_bytes_respects_end_bound(binja_session, base_url, anchors):
     """end= is exclusive: searching strictly before the prologue
-    address must miss it, then including it must hit."""
+    address must miss it, then including the next 16 bytes after it
+    must hit."""
+    cs_int = int(anchors["compute_secret"], 16)
     miss = binja_session.get(
         f"{base_url}/findBytes",
-        params={"pattern": PROLOGUE_BYTES, "start": "0x100000000", "end": PROLOGUE_ADDR},
+        params={
+            "pattern": PROLOGUE_BYTES,
+            "start": "0x100000000",
+            "end": anchors["compute_secret"],
+        },
         timeout=10,
     ).json()
-    assert miss["count"] == 0
+    # No `_compute_secret` prologue before its own address. Earlier
+    # functions might still hit, so only assert against the specific
+    # address we're trying to exclude.
+    addrs = {m["address"] for m in miss["matches"]}
+    assert anchors["compute_secret"] not in addrs
 
     hit = binja_session.get(
         f"{base_url}/findBytes",
         params={
             "pattern": PROLOGUE_BYTES,
             "start": "0x100000000",
-            "end": "0x100000470",
+            "end": f"0x{cs_int + 0x10:x}",
         },
         timeout=10,
     ).json()
-    assert hit["count"] >= 1
+    assert anchors["compute_secret"] in {m["address"] for m in hit["matches"]}
 
 
 # ---------- /findText ----------
 
 
-def test_find_text_locates_fixture_string(binja_session, base_url):
+def test_find_text_locates_fixture_string(binja_session, base_url, anchors):
     r = binja_session.get(
         f"{base_url}/findText",
         params={"text": "usage", "limit": 10},
@@ -101,8 +106,9 @@ def test_find_text_locates_fixture_string(binja_session, base_url):
     assert body["text"] == "usage"
     assert body["case_sensitive"] is True
     addrs = {m["address"] for m in body["matches"]}
-    # The literal lives in __cstring at 0x100000578.
-    assert USAGE_STRING_ADDR in addrs
+    # The literal lives in __cstring (the address resolved by the
+    # `anchors` fixture).
+    assert anchors["usage_string"] in addrs
 
 
 def test_find_text_case_sensitive_skips_wrong_case(binja_session, base_url):
@@ -127,15 +133,16 @@ def test_find_text_no_match_returns_empty(binja_session, base_url):
     assert body["matches"] == []
 
 
-def test_find_text_respects_bounds(binja_session, base_url):
+def test_find_text_respects_bounds(binja_session, base_url, anchors):
     """Bounding the search to the __cstring region around the literal
     must still find it; bounding strictly past it must not."""
+    usage_int = int(anchors["usage_string"], 16)
     inside = binja_session.get(
         f"{base_url}/findText",
         params={
             "text": "usage",
-            "start": "0x100000570",
-            "end": "0x100000600",
+            "start": f"0x{usage_int - 0x10:x}",
+            "end": f"0x{usage_int + 0x40:x}",
             "limit": 10,
         },
         timeout=10,
@@ -146,7 +153,7 @@ def test_find_text_respects_bounds(binja_session, base_url):
         f"{base_url}/findText",
         params={
             "text": "usage",
-            "start": "0x100000600",
+            "start": f"0x{usage_int + 0x40:x}",
             "limit": 10,
         },
         timeout=10,
@@ -198,29 +205,41 @@ def test_find_constant_accepts_hex_and_decimal(binja_session, base_url):
     assert by_dec["matches"] == by_hex["matches"]
 
 
-def test_find_constant_respects_bounds(binja_session, base_url):
-    """An end= bound that excludes every site where the constant is
-    referenced must produce zero matches; widening to include those
-    sites must hit at least one."""
+def test_find_constant_respects_bounds(binja_session, base_url, anchors):
+    """An end= bound that excludes `_compute_secret` entirely must
+    produce zero matches for the `i * 7` constant; widening past
+    its end must hit at least one."""
+    cs_int = int(anchors["compute_secret"], 16)
     excluded = binja_session.get(
         f"{base_url}/findConstant",
-        params={"value": 7, "start": "0x100000000", "end": "0x100000460", "limit": 50},
+        params={
+            "value": 7,
+            "start": "0x100000000",
+            "end": anchors["compute_secret"],
+            "limit": 50,
+        },
         timeout=15,
     ).json()
-    assert excluded["count"] == 0
+    cs_hits = [m for m in excluded["matches"] if m["function"] == "_compute_secret"]
+    assert cs_hits == []
 
     included = binja_session.get(
         f"{base_url}/findConstant",
-        params={"value": 7, "start": "0x100000000", "end": "0x1000004c4", "limit": 50},
+        params={
+            "value": 7,
+            "start": "0x100000000",
+            "end": f"0x{cs_int + 0x100:x}",
+            "limit": 50,
+        },
         timeout=15,
     ).json()
-    assert included["count"] >= 1
+    assert any(m["function"] == "_compute_secret" for m in included["matches"])
 
 
 # ---------- /parseExpression ----------
 
 
-def test_parse_expression_resolves_symbol(binja_session, base_url):
+def test_parse_expression_resolves_symbol(binja_session, base_url, anchors):
     r = binja_session.get(
         f"{base_url}/parseExpression", params={"expr": "_compute_secret"}, timeout=5
     )
@@ -228,22 +247,22 @@ def test_parse_expression_resolves_symbol(binja_session, base_url):
     body = r.json()
     assert body["status"] == "ok"
     assert body["expression"] == "_compute_secret"
-    assert body["address"] == COMPUTE_SECRET_ADDR_HEX
-    assert body["value"] == int(COMPUTE_SECRET_ADDR_HEX, 16)
+    assert body["address"] == anchors["compute_secret"]
+    assert body["value"] == int(anchors["compute_secret"], 16)
 
 
-def test_parse_expression_hex_literal_round_trips(binja_session, base_url):
+def test_parse_expression_hex_literal_round_trips(binja_session, base_url, anchors):
     r = binja_session.get(
         f"{base_url}/parseExpression",
-        params={"expr": COMPUTE_SECRET_ADDR_HEX},
+        params={"expr": anchors["compute_secret"]},
         timeout=5,
     )
     r.raise_for_status()
     body = r.json()
-    assert body["address"] == COMPUTE_SECRET_ADDR_HEX
+    assert body["address"] == anchors["compute_secret"]
 
 
-def test_parse_expression_supports_arithmetic(binja_session, base_url):
+def test_parse_expression_supports_arithmetic(binja_session, base_url, anchors):
     """`_compute_secret + 4` resolves to the second instruction of
     the function."""
     r = binja_session.get(
@@ -253,21 +272,21 @@ def test_parse_expression_supports_arithmetic(binja_session, base_url):
     )
     r.raise_for_status()
     body = r.json()
-    assert body["value"] == int(COMPUTE_SECRET_ADDR_HEX, 16) + 4
+    assert body["value"] == int(anchors["compute_secret"], 16) + 4
 
 
-def test_parse_expression_substitutes_dollar_here(binja_session, base_url):
+def test_parse_expression_substitutes_dollar_here(binja_session, base_url, anchors):
     """BN's expression language uses `$here` for the address context
     passed via the `here=` query parameter."""
     r = binja_session.get(
         f"{base_url}/parseExpression",
-        params={"expr": "$here+8", "here": ENTRY_FN_ADDR_HEX},
+        params={"expr": "$here+8", "here": anchors["main"]},
         timeout=5,
     )
     r.raise_for_status()
     body = r.json()
-    assert body["here"] == ENTRY_FN_ADDR_HEX
-    assert body["value"] == int(ENTRY_FN_ADDR_HEX, 16) + 8
+    assert body["here"] == anchors["main"]
+    assert body["value"] == int(anchors["main"], 16) + 8
 
 
 def test_parse_expression_missing_expr_returns_400(binja_session, base_url):

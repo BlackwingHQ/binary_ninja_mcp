@@ -87,16 +87,18 @@ def test_symbols_by_type_unknown_type_returns_400(binja_session, base_url):
     assert "function" in body["error"]
 
 
-def test_symbols_by_type_respects_address_bounds(binja_session, base_url):
-    """Bounding before `_start` (0x1000004c4) must exclude it from
-    the result set — _compute_secret at 0x100000460 stays, _start
-    drops out."""
+def test_symbols_by_type_respects_address_bounds(binja_session, base_url, anchors):
+    """Bound the search to a tight window just past `_compute_secret`
+    — only it should fall inside, and every entry in the answer must
+    sit below the end bound."""
+    cs_int = int(anchors["compute_secret"], 16)
+    end_int = cs_int + 0x10  # just past the prologue, before any other function
     r = binja_session.get(
         f"{base_url}/getSymbolsByType",
         params={
             "type": "function",
             "start": "0x100000000",
-            "end": "0x100000470",
+            "end": f"0x{end_int:x}",
             "limit": 50,
         },
         timeout=10,
@@ -104,9 +106,8 @@ def test_symbols_by_type_respects_address_bounds(binja_session, base_url):
     r.raise_for_status()
     addrs = {int(s["address"], 16) for s in r.json()["symbols"]}
     for addr in addrs:
-        assert addr < 0x100000470, f"symbol at {hex(addr)} leaked past end bound"
-    # `_compute_secret` at 0x100000460 is in range — at least one hit.
-    assert addrs, "expected _compute_secret to remain in range"
+        assert addr < end_int, f"symbol at {hex(addr)} leaked past end bound"
+    assert cs_int in addrs, "expected _compute_secret to remain in range"
 
 
 # ---------- /getUserDefinedType ----------

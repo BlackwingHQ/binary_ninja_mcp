@@ -33,11 +33,11 @@ def test_stack_frame_vars_by_function_name(binja_session, base_url):
         assert name in blob, f"expected {name!r} in stack-frame payload: {payload}"
 
 
-def test_stack_frame_vars_by_address(binja_session, base_url):
+def test_stack_frame_vars_by_address(binja_session, base_url, anchors):
     """`function=` accepts both names and hex addresses."""
     r = binja_session.get(
         f"{base_url}/getStackFrameVars",
-        params={"function": "0x100000460"},
+        params={"function": anchors["compute_secret"]},
         timeout=5,
     )
     r.raise_for_status()
