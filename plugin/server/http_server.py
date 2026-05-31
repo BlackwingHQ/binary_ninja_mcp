@@ -5,7 +5,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, ClassVar
 
 import binaryninja as bn
-from binaryninja.settings import Settings
 
 from ..api.endpoints import BinaryNinjaEndpoints
 from ..core.binary_operations import BinaryOperations
@@ -3138,13 +3137,6 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         old_name = int(old_name)
 
                 bn.log_info(f"Attempting to rename function: {old_name} -> {new_name}")
-
-                # Apply prefix from settings
-                settings = Settings()
-                prefix = settings.get_string("mcp.renamePrefix")
-                if prefix and not new_name.startswith(prefix):
-                    new_name = prefix + new_name
-                    bn.log_info(f"Applied prefix '{prefix}': {new_name}")
 
                 # Get function info for validation
                 func_info = self.binary_ops.get_function_info(old_name)

@@ -474,8 +474,7 @@ def fetch_disassembly(name: str) -> str:
 @mcp.tool()
 def rename_function(old_name: str, new_name: str) -> str:
     """
-    Rename a function by its current name to a new user-defined name.
-    The configured prefix (default "mcp_") will be automatically prepended if not present.
+    Rename a function. The new name is stored exactly as provided.
     """
     return safe_post("renameFunction", {"oldName": old_name, "newName": new_name})
 

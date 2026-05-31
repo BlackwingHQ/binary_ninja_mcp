@@ -104,10 +104,6 @@ def _register_settings():
     settings = Settings()
     settings.register_group("mcp", "MCP Server")
     settings.register_setting(
-        "mcp.renamePrefix",
-        '{ "title": "Rename Prefix", "type": "string", "default": "mcp_", "description": "Prefix to prepend to renamed functions and variables (e.g. mcp_, mw_). Leave empty for no prefix." }',
-    )
-    settings.register_setting(
         "mcp.showStatusButton",
         '{ "title": "Show Status Button", "type": "boolean", "default": true, "description": "Show MCP server status button in the status bar." }',
     )

@@ -7,14 +7,9 @@ version — the C++-layer `Variable.name` setter doesn't always
 register with the undo stack — so variable-rename tests manually
 rename back to the original to guarantee cleanup.
 
-Notable server behavior:
-  - /renameFunction prepends the `mcp.renamePrefix` setting (default
-    `mcp_`) to any new name that doesn't already start with it.
-    Tests pin this by passing names that already include the prefix
-    so the assertion text matches what the server actually stores.
-  - /renameVariables records ONE undo entry per variable renamed
-    (response.undo_entries reflects this); batch undo isn't merged
-    server-side.
+Note: /renameVariables records ONE undo entry per variable renamed
+(response.undo_entries reflects this); batch undo isn't merged
+server-side.
 """
 
 import contextlib
@@ -38,11 +33,10 @@ def _undo_after(session, base_url, count: int = 1):
 
 
 def test_rename_function_round_trip(binja_session, base_url):
-    """POST /renameFunction with a name that already starts with
-    `mcp_` so the prefix logic is a no-op. A single undo restores
-    the original symbol."""
+    """POST /renameFunction stores the new name verbatim; a single
+    undo restores the original symbol."""
     methods_url = f"{base_url}/methods"
-    new_name = "mcp_test_renamed_compute_secret"
+    new_name = "test_renamed_compute_secret"
 
     baseline_names = {
         f["name"] for f in binja_session.get(methods_url, timeout=5).json()["functions"]
@@ -67,32 +61,24 @@ def test_rename_function_round_trip(binja_session, base_url):
     assert new_name not in restored
 
 
-def test_rename_function_prepends_configured_prefix(binja_session, base_url):
-    """A new_name that DOESN'T start with the configured `mcp_`
-    prefix gets it prepended server-side. The success message echoes
-    the final name, so we use that to find what the server actually
-    chose without hardcoding the prefix."""
-    requested = "auto_prefix_test_target"
+def test_rename_function_stores_name_verbatim(binja_session, base_url):
+    """The server stores whatever name the caller provides — no
+    prefix added, no transformation. This pins the contract so a
+    future server change that introduces auto-prefixing is a
+    deliberate, test-visible decision."""
+    requested = "verbatim_no_prefix_target"
     r = binja_session.post(
         f"{base_url}/renameFunction",
         data={"oldName": "_compute_secret", "newName": requested},
         timeout=10,
     )
     r.raise_for_status()
-    message = r.json()["message"]
     try:
-        # Message reads e.g. "Successfully renamed function from _compute_secret to mcp_auto_prefix_test_target"
-        final_name = message.rsplit(" to ", 1)[1].strip()
-        assert final_name.endswith(requested)
-        assert final_name != requested, (
-            f"server didn't prepend a prefix; check the mcp.renamePrefix setting. Got {final_name!r}"
-        )
-
         names = {
             f["name"]
             for f in binja_session.get(f"{base_url}/methods", timeout=5).json()["functions"]
         }
-        assert final_name in names
+        assert requested in names, f"expected {requested!r} in {names}"
     finally:
         binja_session.get(f"{base_url}/undo", timeout=10)
 
@@ -107,12 +93,12 @@ def test_rename_function_unknown_old_name_does_not_disturb_baseline(binja_sessio
 
     binja_session.post(
         f"{base_url}/renameFunction",
-        data={"oldName": "definitely_not_a_function_xyz", "newName": "mcp_should_not_appear"},
+        data={"oldName": "definitely_not_a_function_xyz", "newName": "should_not_appear"},
         timeout=10,
     )
     after = {f["name"] for f in binja_session.get(methods_url, timeout=5).json()["functions"]}
     assert after == before
-    assert "mcp_should_not_appear" not in after
+    assert "should_not_appear" not in after
 
 
 # ---------- /renameData ----------
