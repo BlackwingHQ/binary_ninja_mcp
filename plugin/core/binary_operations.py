@@ -2076,7 +2076,13 @@ class BinaryOperations:
         return False
 
     def delete_function_comment(self, identifier: str | int) -> bool:
-        """Delete a comment for a function"""
+        """Delete the comment at a function's start.
+
+        Mirrors the storage used by `set_function_comment` /
+        `get_function_comment` (a view-level comment at `func.start`),
+        not BN's `Function.comment` attribute — those are independent
+        slots and writing the wrong one silently no-ops.
+        """
         if not self._current_view:
             raise RuntimeError("No binary loaded")
 
@@ -2085,7 +2091,7 @@ class BinaryOperations:
             if not func:
                 return False
 
-            func.comment = None
+            self._current_view.set_comment_at(func.start, None)
             return True
         except Exception as e:
             bn.log_error(f"Failed to delete function comment: {e}")
