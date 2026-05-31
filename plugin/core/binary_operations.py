@@ -4933,18 +4933,25 @@ class BinaryOperations:
         }
 
     def _undo_redo_state(self) -> dict[str, Any]:
-        """Best-effort snapshot of whether undo/redo are currently possible."""
+        """Snapshot of whether undo/redo are currently possible.
+
+        BN doesn't expose `can_undo`/`can_redo` directly; instead the
+        underlying FileMetadata carries `undo_entries`/`redo_entries`
+        lists. Each list is non-empty iff that direction is possible.
+        """
         bv = self._current_view
         out: dict[str, Any] = {"can_undo": None, "can_redo": None}
         if bv is None:
             return out
-        for key, attr_name in (("can_undo", "can_undo"), ("can_redo", "can_redo")):
+        fmd = getattr(bv, "file", None)
+        if fmd is None:
+            return out
+        for key, attr_name in (("can_undo", "undo_entries"), ("can_redo", "redo_entries")):
             try:
-                attr = getattr(bv, attr_name, None)
-                if callable(attr):
-                    out[key] = bool(attr())
-                elif attr is not None:
-                    out[key] = bool(attr)
+                entries = getattr(fmd, attr_name, None)
+                if entries is None:
+                    continue
+                out[key] = bool(list(entries))
             except Exception:
                 out[key] = None
         return out
