@@ -1690,7 +1690,9 @@ class BinaryOperations:
         tobj = None
         source = "unknown"
 
-        # 1) Try view local resolution first
+        # 1) Try view-local resolution first (covers any type already
+        #    imported into the current BinaryView, including Mach-O /
+        #    ELF header types BN brings in automatically).
         try:
             if hasattr(self._current_view, "get_type_by_name"):
                 t = self._current_view.get_type_by_name(type_name)
@@ -1700,17 +1702,38 @@ class BinaryOperations:
         except Exception:
             pass
 
-        # 2) Fall back to platform type libraries
-        if tobj is None:
+        plat = getattr(self._current_view, "platform", None)
+
+        # 2) Ask the platform directly — this covers the libc typedefs
+        #    (`size_t`, `pid_t`, `FILE`, ...) that BN knows about but
+        #    hasn't necessarily imported into the view yet.
+        if tobj is None and plat is not None:
+            get_t = getattr(plat, "get_type_by_name", None)
+            if callable(get_t):
+                try:
+                    try:
+                        t = get_t(bn.QualifiedName(type_name))
+                    except Exception:
+                        t = get_t(type_name)
+                    if t is not None:
+                        tobj = t
+                        source = "platform"
+                except Exception:
+                    pass
+
+        # 3) Last resort: walk the platform's type libraries one by one.
+        #    Slower than the platform-level lookup above but catches
+        #    types registered only in a specific library.
+        if tobj is None and plat is not None:
             try:
-                plat = getattr(self._current_view, "platform", None)
-                libs = list(getattr(plat, "type_libraries", []) or []) if plat else []
+                libs = list(getattr(plat, "type_libraries", []) or [])
                 for lib in libs:
-                    get_t = getattr(lib, "get_type_by_name", None)
+                    get_t = getattr(lib, "get_type_by_name", None) or getattr(
+                        lib, "get_named_type", None
+                    )
                     if not callable(get_t):
                         continue
                     try:
-                        # Try with QualifiedName if available
                         try:
                             t = get_t(bn.QualifiedName(type_name))
                         except Exception:

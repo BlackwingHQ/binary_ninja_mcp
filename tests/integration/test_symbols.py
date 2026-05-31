@@ -7,9 +7,6 @@ struct/enum/union tests for /getTypeInfo is intentionally minimal
 here — those need fixture additions to exercise meaningfully.
 """
 
-import pytest
-
-
 # ---------- /getSymbolsByType ----------
 
 
@@ -132,22 +129,35 @@ def test_user_defined_type_unknown_returns_404(binja_session, base_url):
 # ---------- /getTypeInfo ----------
 
 
-@pytest.mark.xfail(
-    reason="server bug: /getTypeInfo always returns "
-    "`{kind: 'unknown', decl: null, source: 'unknown'}` even for "
-    "well-known built-ins like 'int' and 'void'. The endpoint can't "
-    "resolve type names against the BinaryView's type pool.",
-    strict=False,
-)
-def test_type_info_builtin_int_returns_decl(binja_session, base_url):
+def test_type_info_resolves_view_local_struct(binja_session, base_url):
+    """`mach_header_64` is brought into the view automatically when BN
+    loads a Mach-O binary, so it must resolve via the view-local
+    lookup path with source='local' and a populated members list."""
     r = binja_session.get(
-        f"{base_url}/getTypeInfo", params={"name": "int"}, timeout=5
+        f"{base_url}/getTypeInfo", params={"name": "mach_header_64"}, timeout=5
     )
     r.raise_for_status()
     body = r.json()
-    assert body["name"] == "int"
+    assert body["name"] == "mach_header_64"
+    assert body["kind"] == "struct"
+    assert body["source"] == "local"
+    assert body["decl"]
+    assert body["members"], "struct must report its members"
+
+
+def test_type_info_resolves_libc_typedef_via_platform(binja_session, base_url):
+    """`size_t` is a libc typedef known to the macOS platform but not
+    imported into a fresh view; the platform-level lookup path must
+    catch it."""
+    r = binja_session.get(
+        f"{base_url}/getTypeInfo", params={"name": "size_t"}, timeout=10
+    )
+    r.raise_for_status()
+    body = r.json()
+    assert body["name"] == "size_t"
+    assert body["source"] in {"platform", "library"}
     assert body["kind"] != "unknown"
-    assert body["decl"], "expected a non-null type declaration for 'int'"
+    assert body["decl"]
 
 
 def test_type_info_unknown_type_pins_response_shape(binja_session, base_url):
