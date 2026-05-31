@@ -1,9 +1,8 @@
-"""One end-to-end smoke test against a live Binary Ninja.
+"""End-to-end smoke test against a live Binary Ninja.
 
 The `binja_session` fixture (see conftest.py) covers reachability,
 auth, and confirming the right fixture binary is open — so the body
-of the test is just the read-only tool call we actually want to
-exercise. Add new tests below as the integration surface grows.
+of each test is just the read-only tool call being exercised.
 """
 
 

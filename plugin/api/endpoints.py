@@ -96,6 +96,28 @@ class BinaryNinjaEndpoints:
             selected_entry["active"] = True
         return {"status": "ok", "selected": selected_entry}
 
+    def list_platforms(self) -> dict[str, Any]:
+        """Enumerate every platform Binary Ninja knows about.
+
+        Returned shape mirrors the other listing endpoints:
+            {"platforms": [{"name", "arch", "default_calling_convention"}, ...]}
+
+        Useful as the source-of-truth list to pass into `make_function_at`
+        and `set_function_prototype`, which both take a platform identifier.
+        """
+        platforms: list[dict[str, Any]] = []
+        for p in bn.Platform.get_list():
+            arch = p.arch.name if p.arch else None
+            cc = p.default_calling_convention
+            platforms.append(
+                {
+                    "name": p.name,
+                    "arch": arch,
+                    "default_calling_convention": cc.name if cc else None,
+                }
+            )
+        return {"platforms": platforms}
+
     def get_function_info(self, identifier: str) -> dict[str, Any] | None:
         """Get detailed information about a function"""
         try:
