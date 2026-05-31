@@ -893,15 +893,21 @@ def define_user_symbol(address: str, name: str, kind: str = "data") -> str:
 @mcp.tool()
 def undefine_user_symbol(address: str) -> str:
     """
-    Remove the user symbol at an address.
+    Remove the symbol at an address.
+
+    Works for any non-auto symbol — user-created labels, DWARF
+    imports, and library symbols are all removable, and the change
+    is reversible with `undo`. The only thing the server refuses is
+    BN's truly auto-generated symbols (Mach-O / ELF / PE header
+    constructs like `__macho_header` that BN synthesises while
+    parsing the binary); those return an error mentioning
+    "auto-generated".
 
     Args:
         address: Target address (hex like "0x401000" or decimal).
 
     Returns:
-        Status string from the server, or an error message. The server
-        rejects requests against auto-generated symbols and returns a clear
-        error in that case.
+        Status string from the server, or an error message.
     """
     if not address:
         return "Error: address is required"

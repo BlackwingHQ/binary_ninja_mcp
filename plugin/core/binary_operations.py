@@ -3692,6 +3692,19 @@ class BinaryOperations:
         if sym is None:
             raise ValueError(f"No symbol found at {hex(addr)}")
 
+        # BN happily accepts `undefine_user_symbol(auto_sym)` and either
+        # silently no-ops or removes the auto symbol — either way the
+        # caller's "ok / removed" response would mislead them. Refuse
+        # the request and tell them what kind of symbol it is so they
+        # know they have to leave it alone (or, for DWARF-imported
+        # globals, rename instead via /renameData).
+        if getattr(sym, "auto", False):
+            raise ValueError(
+                f"Symbol at {hex(addr)} ({getattr(sym, 'name', '?')!r}) is "
+                "auto-generated, not user-defined; refusing to undefine. "
+                "Use /renameData to relabel an auto symbol."
+            )
+
         prior_name = getattr(sym, "name", None)
         try:
             bv.undefine_user_symbol(sym)
