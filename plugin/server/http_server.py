@@ -2909,11 +2909,17 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     self._send_json_response({"error": str(e)}, 500)
 
             elif path == "/getStackFrameVars":
-                function_identifier = params.get("name") or params.get("address")
+                function_identifier = (
+                    params.get("name")
+                    or params.get("address")
+                    or params.get("function")
+                    or params.get("functionName")
+                    or params.get("functionAddress")
+                )
                 if not function_identifier:
                     self._send_json_response(
                         {
-                            "error": "Missing required parameter: name or address",
+                            "error": "Missing required parameter: name, address, or function",
                             "received": params,
                         },
                         400,

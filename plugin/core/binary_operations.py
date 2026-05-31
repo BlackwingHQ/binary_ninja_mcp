@@ -4271,11 +4271,20 @@ class BinaryOperations:
                 try:
                     hlil = getattr(func, "hlil", None)
                     if hlil is not None:
-                        getter = getattr(hlil, "get_instructions_at", None)
-                        if callable(getter):
-                            instrs = list(getter(addr_int) or [])
-                            if instrs:
-                                snippet = str(instrs[0])
+                        # One machine address can map to several IL
+                        # instructions; the first one at that address
+                        # is the best textual representative.
+                        start_getter = getattr(hlil, "get_instruction_start", None)
+                        if callable(start_getter):
+                            try:
+                                idx = start_getter(addr_int)
+                            except Exception:
+                                idx = None
+                            if idx is not None and idx >= 0:
+                                try:
+                                    snippet = str(hlil[int(idx)])
+                                except (IndexError, KeyError, ValueError):
+                                    snippet = None
                 except Exception:
                     snippet = None
                 out.append(
@@ -4310,6 +4319,60 @@ class BinaryOperations:
             raise ValueError(f"Variable {clean_var!r} not found in {func.name}")
         return func, var
 
+    @staticmethod
+    def _collect_var_refs(
+        func: Any,
+        var: Any,
+        il_level: str,
+        method_name: str,
+    ) -> list[Any]:
+        """Call ``method_name`` (``get_var_uses`` or ``get_var_definitions``)
+        on the HLIL and/or MLIL function objects per the ``il_level``
+        filter, wrapping each returned IL instruction in a tiny adapter
+        so :meth:`_serialize_var_refs` sees the same `(addr, il_type)`
+        shape it gets from ``ILReferenceSource`` objects.
+
+        BN exposes these methods on the *IL* function classes, not on
+        ``Function`` itself, and LLIL has no concept of named variables
+        — so ``il_level="llil"`` is rejected outright.
+        """
+
+        class _Ref:
+            __slots__ = ("addr", "address", "il_type")
+
+            def __init__(self, addr: int, il_type: str) -> None:
+                self.addr = addr
+                self.address = addr
+                self.il_type = il_type
+
+        wanted = (il_level or "all").strip().lower()
+        if wanted == "llil":
+            raise ValueError(
+                "LLIL does not track named variables; use il_level='hlil', 'mlil', or 'all'"
+            )
+        if wanted not in ("hlil", "mlil", "all"):
+            raise ValueError(f"Unsupported il_level {il_level!r}; use 'hlil', 'mlil', or 'all'")
+
+        out: list[Any] = []
+        for level in ("hlil", "mlil"):
+            if wanted not in (level, "all"):
+                continue
+            il_func = getattr(func, level, None)
+            if il_func is None:
+                continue
+            getter = getattr(il_func, method_name, None)
+            if not callable(getter):
+                continue
+            try:
+                for instr in getter(var) or []:
+                    addr = getattr(instr, "address", None)
+                    if addr is None:
+                        continue
+                    out.append(_Ref(int(addr), level))
+            except Exception as e:
+                raise ValueError(f"{level.upper()} {method_name} failed: {e!s}") from e
+        return out
+
     def get_var_uses(
         self,
         function_ident: str | int,
@@ -4323,7 +4386,8 @@ class BinaryOperations:
             var_name: Local variable name (as shown by
                 ``get_stack_frame_vars`` or in the decompilation).
             il_level: Filter by IL level — "all" (default), "hlil",
-                "mlil", or "llil". Case-insensitive.
+                or "mlil". Case-insensitive. ``"llil"`` is rejected
+                because Low Level IL does not model named variables.
 
         Returns:
             Dict with function, function_address, variable, il_level,
@@ -4332,14 +4396,11 @@ class BinaryOperations:
 
         Raises:
             RuntimeError: If no binary is loaded.
-            ValueError: If the function or variable can't be found, or
-                the BN call fails.
+            ValueError: If the function or variable can't be found, the
+                ``il_level`` is unsupported, or the BN call fails.
         """
         func, var = self._resolve_func_and_var(function_ident, var_name)
-        try:
-            refs = list(func.get_var_uses(var) or [])
-        except Exception as e:
-            raise ValueError(f"Failed to get var uses: {e!s}")
+        refs = self._collect_var_refs(func, var, il_level, "get_var_uses")
         uses = self._serialize_var_refs(func, refs, il_level)
         return {
             "function": getattr(func, "name", None),
@@ -4362,10 +4423,7 @@ class BinaryOperations:
         ``definitions`` instead of ``uses``.
         """
         func, var = self._resolve_func_and_var(function_ident, var_name)
-        try:
-            refs = list(func.get_var_definitions(var) or [])
-        except Exception as e:
-            raise ValueError(f"Failed to get var definitions: {e!s}")
+        refs = self._collect_var_refs(func, var, il_level, "get_var_definitions")
         defs = self._serialize_var_refs(func, refs, il_level)
         return {
             "function": getattr(func, "name", None),
@@ -4433,22 +4491,45 @@ class BinaryOperations:
                 f"MLIL unavailable for {getattr(func, 'name', '?')} — "
                 "analysis may not have completed"
             )
-        instrs_getter = getattr(mlil, "get_instructions_at", None)
-        if not callable(instrs_getter):
-            raise RuntimeError(
-                "MediumLevelILFunction.get_instructions_at is unavailable in this BN version"
-            )
-
+        # One machine instruction can lower to several MLIL instructions,
+        # so we walk forward from the first IL instruction at this address
+        # until the address changes. `get_instruction_start` gives us that
+        # starting index; if it isn't available we fall back to scanning
+        # every instruction in the function (slower but always correct).
         call_instr = None
         try:
-            for instr in instrs_getter(addr) or []:
-                op = getattr(instr, "operation", None)
-                op_name = str(op) if op is not None else ""
-                if "CALL" in op_name.upper():
-                    call_instr = instr
-                    break
+            start_idx = None
+            start_getter = getattr(mlil, "get_instruction_start", None)
+            if callable(start_getter):
+                try:
+                    start_idx = start_getter(addr)
+                except Exception:
+                    start_idx = None
+
+            if start_idx is not None and start_idx >= 0:
+                i = int(start_idx)
+                while True:
+                    try:
+                        instr = mlil[i]
+                    except (IndexError, KeyError, ValueError):
+                        break
+                    if instr is None or getattr(instr, "address", None) != addr:
+                        break
+                    op_name = str(getattr(instr, "operation", "") or "")
+                    if "CALL" in op_name.upper():
+                        call_instr = instr
+                        break
+                    i += 1
+            else:
+                for instr in mlil.instructions:
+                    if getattr(instr, "address", None) != addr:
+                        continue
+                    op_name = str(getattr(instr, "operation", "") or "")
+                    if "CALL" in op_name.upper():
+                        call_instr = instr
+                        break
         except Exception as e:
-            raise ValueError(f"Failed to enumerate MLIL at {hex(addr)}: {e!s}")
+            raise ValueError(f"Failed to enumerate MLIL at {hex(addr)}: {e!s}") from e
 
         if call_instr is None:
             raise ValueError(f"No call instruction at {hex(addr)} in {getattr(func, 'name', '?')}")
