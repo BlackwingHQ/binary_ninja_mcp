@@ -294,9 +294,16 @@ def rename_multi_variables(
 ) -> str:
     """
     Rename multiple local variables in one call.
+
     - function_identifier: function name or address (hex)
-    - Provide either mapping_json (JSON object old->new), renames_json (JSON array of {old,new}), or pairs ("old1:new1,old2:new2").
+    - Provide either mapping_json (JSON object old->new), renames_json
+      (JSON array of {old,new}), or pairs ("old1:new1,old2:new2").
+
     Returns per-item results and totals.
+
+    Undo: each rename creates its own undo entry — to fully revert a
+    batch of N renames you must call `undo` N times. The
+    response's `renamed` field is the exact undo count.
     """
     params: dict[str, object] = {}
     ident = (function_identifier or "").strip()

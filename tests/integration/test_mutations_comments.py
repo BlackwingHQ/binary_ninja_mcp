@@ -22,19 +22,17 @@ import contextlib
 
 
 @contextlib.contextmanager
-def _undo_after(session, base_url, expected_undos: int = 1):
-    """Run the block, then issue `expected_undos` undo calls. The
-    caller is responsible for verifying the baseline was restored —
-    this just guarantees the cleanup attempt happens even when an
-    assertion fails."""
+def _undo_after(session, base_url, count: int = 1):
+    """Issue `count` /undo calls in the finally branch so a failed
+    assertion doesn't leak state into the next test. See conftest.py
+    for the shared version used by other mutation suites."""
     try:
         yield
     finally:
-        for _ in range(expected_undos):
+        for _ in range(count):
             try:
                 session.get(f"{base_url}/undo", timeout=10)
             except Exception:
-                # Best-effort cleanup; don't mask the original failure.
                 pass
 
 

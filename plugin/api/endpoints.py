@@ -488,7 +488,15 @@ class BinaryNinjaEndpoints:
         results: list[dict[str, Any]] = []
         success_count = 0
 
-        # Apply in order; later entries can refer to names produced by earlier renames
+        # NOTE on undo semantics: BN's `Variable.name` setter records
+        # one undo entry per rename, and wrapping the batch in
+        # `bv.undoable_transaction()` or `begin/commit_undo_actions`
+        # does NOT merge them — those APIs only group explicit
+        # `bv.add_undo_action()` calls, not implicit C++-layer
+        # mutations like the variable-name setter. So a caller that
+        # batch-renames N variables here must issue N `/undo` calls
+        # to fully revert. The response's `renamed` field is exactly
+        # that count.
         for idx, item in enumerate(pairs, start=1):
             old_name = item.get("old")
             new_name = item.get("new")
@@ -523,16 +531,13 @@ class BinaryNinjaEndpoints:
                     )
                     continue
 
-                # Primary method: direct property set
                 try:
                     var.name = new_name
                 except Exception:
-                    # Fallback: attempt create_user_var with same storage/type but new name
                     try:
                         if hasattr(func, "create_user_var") and hasattr(var, "storage"):
                             vtype = getattr(var, "type", None)
                             if vtype is None:
-                                # attempt to infer type if possible
                                 vtype = getattr(bn, "Type", None)
                             func.create_user_var(var, vtype, new_name)
                         else:
@@ -550,14 +555,7 @@ class BinaryNinjaEndpoints:
                         continue
 
                 success_count += 1
-                results.append(
-                    {
-                        "index": idx,
-                        "old": old_name,
-                        "new": new_name,
-                        "success": True,
-                    }
-                )
+                results.append({"index": idx, "old": old_name, "new": new_name, "success": True})
             except Exception as e:
                 results.append(
                     {
@@ -569,7 +567,7 @@ class BinaryNinjaEndpoints:
                     }
                 )
 
-        # Best-effort reanalysis for consistency
+        # Best-effort reanalysis for consistency.
         try:
             func.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
         except Exception:
@@ -581,6 +579,7 @@ class BinaryNinjaEndpoints:
             "address": hex(func.start),
             "total": len(pairs),
             "renamed": success_count,
+            "undo_entries": success_count,
             "results": results,
         }
 
