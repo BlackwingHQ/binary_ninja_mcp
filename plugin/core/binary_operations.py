@@ -2893,32 +2893,34 @@ class BinaryOperations:
             "usages": [],  # [{function, address, text, member, value}]
         }
 
-        # Locate the enum type and collect members
+        # Locate the enum type. Direct name-lookup first (covers both
+        # user-defined and DWARF-imported enums); fall back to a
+        # substring scan over `bv.type_names` for partial matches.
+        # `bv.types.values()` is intentionally NOT iterated — it only
+        # carries types in the main container, missing anything BN's
+        # auto-loaders (DWARF, libraries) registered.
         enum_type = None
         try:
-            for t in self._current_view.types.values():
-                try:
-                    # Match by exact name or case-insensitive
-                    if getattr(t, "type_class", None) == TypeClass.EnumerationTypeClass:
-                        tname = getattr(t, "name", None)
-                        if tname and tname.lower() == en_lower:
-                            enum_type = t
-                            break
-                except Exception:
-                    continue
+            t = self._current_view.get_type_by_name(enum_name_str)
+            if t is not None and getattr(t, "type_class", None) == TypeClass.EnumerationTypeClass:
+                enum_type = t
         except Exception:
             pass
 
-        # If not found by exact name, try substring match
         if enum_type is None:
             try:
-                for t in self._current_view.types.values():
+                for qname in getattr(self._current_view, "type_names", []) or []:
                     try:
-                        if getattr(t, "type_class", None) == TypeClass.EnumerationTypeClass:
-                            tname = getattr(t, "name", "")
-                            if tname and en_lower in tname.lower():
-                                enum_type = t
-                                break
+                        name_str = str(qname)
+                        if en_lower not in name_str.lower():
+                            continue
+                        t = self._current_view.get_type_by_name(qname)
+                        if (
+                            t is not None
+                            and getattr(t, "type_class", None) == TypeClass.EnumerationTypeClass
+                        ):
+                            enum_type = t
+                            break
                     except Exception:
                         continue
             except Exception:
@@ -2945,49 +2947,62 @@ class BinaryOperations:
         # Build simple patterns for HLIL text matching of constants (hex)
         import re
 
-        hex_patterns = []
-        for v in values:
-            hex_patterns.append(re.compile(rf"0x{v:x}\b", re.IGNORECASE))
-        # Also a single combined pattern to speed up
-        combined_hex = None
-        if values:
-            combined_hex = re.compile(
-                r"(" + "|".join([rf"0x{v:x}\b" for v in values]) + ")", re.IGNORECASE
-            )
+        # Build a single regex matching either the enumerator NAME
+        # (which BN substitutes into HLIL for typed comparisons) or
+        # the raw hex literal (HLIL leaves constants un-named when
+        # the surrounding expression isn't typed). The capture group
+        # tells us which alternative fired so we can fill `member`
+        # and `value` correctly.
+        alternatives: list[tuple[str, str, int]] = []  # (regex, member_name, value)
+        for mem in members:
+            alternatives.append((rf"\b{re.escape(mem['name'])}\b", mem["name"], mem["value"]))
+            alternatives.append((rf"\b0x{mem['value']:x}\b", mem["name"], mem["value"]))
+        combined = (
+            re.compile("|".join(f"(?:{pat})" for pat, _, _ in alternatives), re.IGNORECASE)
+            if alternatives
+            else None
+        )
 
-        # Scan functions for matches
+        # Scan every function's HLIL for any of the patterns above.
+        # Dedupe by (function, address, member) so a line that
+        # contains both `PRIORITY_HIGH` and `0x7` doesn't double-count.
+        seen: set[tuple[str, str, str | None]] = set()
         for func in list(self._current_view.functions):
             try:
-                if hasattr(func, "hlil") and func.hlil:
-                    for ins in func.hlil.instructions:
-                        try:
-                            text = str(ins)
-                            matched_val = None
-                            if combined_hex is not None:
-                                m = combined_hex.search(text)
-                                if m:
-                                    # parse the matched hex back to int to map member name
-                                    try:
-                                        matched_val = int(m.group(0), 16)
-                                    except Exception:
-                                        matched_val = None
-                            if matched_val is not None:
-                                member_name = None
-                                for mem in members:
-                                    if mem["value"] == matched_val:
-                                        member_name = mem["name"]
-                                        break
-                                result["usages"].append(
-                                    {
-                                        "function": func.name,
-                                        "address": hex(getattr(ins, "address", func.start)),
-                                        "text": text,
-                                        "member": member_name,
-                                        "value": matched_val,
-                                    }
-                                )
-                        except Exception:
+                hlil = getattr(func, "hlil", None)
+                if not hlil:
+                    continue
+                for ins in hlil.instructions:
+                    try:
+                        text = str(ins)
+                        if combined is None or not combined.search(text):
                             continue
+                        # Walk every member to see which one(s) actually
+                        # appear in this instruction — multiple members
+                        # can show up if the line compares against several.
+                        for _, member_name, value in alternatives:
+                            mem_pat = re.compile(
+                                rf"\b({re.escape(member_name)}|0x{value:x})\b",
+                                re.IGNORECASE,
+                            )
+                            if not mem_pat.search(text):
+                                continue
+                            addr_hex = hex(getattr(ins, "address", func.start))
+                            key = (func.name, addr_hex, member_name)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            result["usages"].append(
+                                {
+                                    "function": func.name,
+                                    "address": addr_hex,
+                                    "text": text,
+                                    "member": member_name,
+                                    "value": value,
+                                }
+                            )
+                    except Exception:
+                        continue
             except Exception:
                 continue
 

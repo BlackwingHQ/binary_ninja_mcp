@@ -115,6 +115,24 @@ def test_strings_pagination_advances(binja_session, base_url):
     assert past_end == []
 
 
+def test_all_strings_matches_paginated_strings(binja_session, base_url):
+    """/allStrings returns the same set as /strings without
+    pagination — the unpaginated variant is what callers use when
+    they want the whole table in one round trip. Compare by
+    address-set to avoid coupling to insertion order."""
+    all_body = binja_session.get(f"{base_url}/allStrings", timeout=30).json()
+    paged_body = binja_session.get(
+        f"{base_url}/strings", params={"limit": 10_000}, timeout=30
+    ).json()
+    all_addrs = {s["address"] for s in all_body["strings"]}
+    paged_addrs = {s["address"] for s in paged_body["strings"]}
+    assert all_addrs == paged_addrs
+    # Both must include the fixture's user-level format strings.
+    all_values = {s["value"] for s in all_body["strings"]}
+    for needle in ("usage: %s <n>", "result = %d"):
+        assert any(needle in v for v in all_values), f"{needle!r} missing from /allStrings"
+
+
 # ---------- namespaces / classes ----------
 
 
