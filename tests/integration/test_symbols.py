@@ -68,9 +68,7 @@ def test_symbols_by_type_accepts_raw_enum_name(binja_session, base_url):
 
 
 def test_symbols_by_type_missing_type_returns_400(binja_session, base_url):
-    r = binja_session.get(
-        f"{base_url}/getSymbolsByType", params={"limit": 5}, timeout=5
-    )
+    r = binja_session.get(f"{base_url}/getSymbolsByType", params={"limit": 5}, timeout=5)
     assert r.status_code == 400
     assert "Missing type" in r.json().get("error", "")
 
@@ -133,9 +131,7 @@ def test_type_info_resolves_view_local_struct(binja_session, base_url):
     """`mach_header_64` is brought into the view automatically when BN
     loads a Mach-O binary, so it must resolve via the view-local
     lookup path with source='local' and a populated members list."""
-    r = binja_session.get(
-        f"{base_url}/getTypeInfo", params={"name": "mach_header_64"}, timeout=5
-    )
+    r = binja_session.get(f"{base_url}/getTypeInfo", params={"name": "mach_header_64"}, timeout=5)
     r.raise_for_status()
     body = r.json()
     assert body["name"] == "mach_header_64"
@@ -149,9 +145,7 @@ def test_type_info_resolves_libc_typedef_via_platform(binja_session, base_url):
     """`size_t` is a libc typedef known to the macOS platform but not
     imported into a fresh view; the platform-level lookup path must
     catch it."""
-    r = binja_session.get(
-        f"{base_url}/getTypeInfo", params={"name": "size_t"}, timeout=10
-    )
+    r = binja_session.get(f"{base_url}/getTypeInfo", params={"name": "size_t"}, timeout=10)
     r.raise_for_status()
     body = r.json()
     assert body["name"] == "size_t"
@@ -226,9 +220,7 @@ def test_search_types_include_libraries_returns_matches(binja_session, base_url)
 def test_demangle_itanium_cpp_constructor(binja_session, base_url):
     """`_ZN3FooC1Ev` is `Foo::Foo()` in Itanium ABI — the lingua franca
     of every non-Windows toolchain."""
-    r = binja_session.get(
-        f"{base_url}/demangle", params={"name": "_ZN3FooC1Ev"}, timeout=5
-    )
+    r = binja_session.get(f"{base_url}/demangle", params={"name": "_ZN3FooC1Ev"}, timeout=5)
     r.raise_for_status()
     body = r.json()
     assert body["status"] == "ok"
@@ -240,9 +232,7 @@ def test_demangle_itanium_cpp_constructor(binja_session, base_url):
 def test_demangle_unmangled_c_symbol_returns_unchanged(binja_session, base_url):
     """A plain C symbol isn't really "mangled" — the demangler echoes
     it back unchanged with no type signature."""
-    r = binja_session.get(
-        f"{base_url}/demangle", params={"name": "_main"}, timeout=5
-    )
+    r = binja_session.get(f"{base_url}/demangle", params={"name": "_main"}, timeout=5)
     r.raise_for_status()
     body = r.json()
     assert body["status"] == "ok"
