@@ -1277,7 +1277,16 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
 
-                view = (params.get("view") or params.get("il") or "hlil").strip()
+                view = (params.get("view") or params.get("il") or "hlil").strip().lower()
+                if view not in ("hlil", "mlil", "llil"):
+                    self._send_json_response(
+                        {
+                            "error": f"Unsupported IL view: {view!r}",
+                            "supported_views": ["hlil", "mlil", "llil"],
+                        },
+                        400,
+                    )
+                    return
                 ssa_param = (params.get("ssa") or params.get("isSSA") or "0").strip().lower()
                 ssa = ssa_param in ("1", "true", "yes", "on")
 
