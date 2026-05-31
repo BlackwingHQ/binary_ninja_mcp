@@ -1187,6 +1187,32 @@ class BinaryOperations:
             except Exception:
                 plat_obj = None
 
+        # Pre-flight: address must be in a mapped, executable segment.
+        # Without this, `bv.create_user_function` happily "succeeds"
+        # at unmapped addresses (no function actually appears) and
+        # overlays functions on top of data symbols (clobbering them
+        # silently). Both produce misleading "ok" responses.
+        seg = None
+        try:
+            seg_getter = getattr(bv, "get_segment_at", None)
+            if callable(seg_getter):
+                seg = seg_getter(addr)
+        except Exception:
+            seg = None
+        if seg is None:
+            raise ValueError(
+                f"Address {hex(addr)} is not in any mapped segment; "
+                "no function can be created there."
+            )
+        if not getattr(seg, "executable", False):
+            raise ValueError(
+                f"Address {hex(addr)} lies in a non-executable segment "
+                f"({hex(int(seg.start))}-{hex(int(seg.end))}); refusing to "
+                "create a function over data. If the address truly contains "
+                "code that BN misclassified, fix the segment permissions "
+                "first."
+            )
+
         # Create the function
         try:
             if hasattr(bv, "create_user_function"):
@@ -1204,11 +1230,19 @@ class BinaryOperations:
         except Exception as e:
             raise ValueError(f"Failed to create function: {e!s}")
 
-        # Fetch created function info
+        # Post-flight: BN's `create_user_function` doesn't always
+        # raise on failure — confirm the function actually exists
+        # before reporting success.
         try:
             fn = bv.get_function_at(addr)
         except Exception:
             fn = None
+        if fn is None:
+            raise ValueError(
+                f"BN accepted the request but no function exists at "
+                f"{hex(addr)} after analysis; the address may not contain "
+                "valid instructions."
+            )
         return {
             "status": "ok",
             "address": hex(addr),
@@ -3833,6 +3867,18 @@ class BinaryOperations:
         except Exception as e:
             raise ValueError(f"Failed to set can_return: {e!s}")
 
+        # BN caches function metadata; without a synchronous
+        # reanalyze, /getFunctionMetadata keeps returning the
+        # pre-mutation value until something else triggers analysis.
+        # `reanalyze` alone queues background work — pair it with
+        # `update_analysis_and_wait` so the agent sees the new value
+        # the moment this call returns.
+        try:
+            func.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
+            self._current_view.update_analysis_and_wait()
+        except Exception:
+            pass
+
         return {
             "status": "ok",
             "function": getattr(func, "name", None),
@@ -3888,6 +3934,14 @@ class BinaryOperations:
         except Exception as e:
             raise ValueError(f"Failed to apply return type: {e!s}")
 
+        # See `set_function_can_return` — synchronous reanalysis so
+        # the metadata cache reflects the new type immediately.
+        try:
+            func.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
+            self._current_view.update_analysis_and_wait()
+        except Exception:
+            pass
+
         return {
             "status": "ok",
             "function": getattr(func, "name", None),
@@ -3921,6 +3975,14 @@ class BinaryOperations:
             func.inline_during_analysis = value
         except Exception as e:
             raise ValueError(f"Failed to set inline_during_analysis: {e!s}")
+
+        # See `set_function_can_return` — synchronous reanalysis so
+        # the metadata cache reflects the change immediately.
+        try:
+            func.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
+            self._current_view.update_analysis_and_wait()
+        except Exception:
+            pass
 
         return {
             "status": "ok",
@@ -4969,64 +5031,85 @@ class BinaryOperations:
                 out[key] = None
         return out
 
-    def undo(self) -> dict[str, Any]:
-        """Undo the most recent BN action, if any.
+    def _undo_redo_loop(self, action: str, count: int) -> dict[str, Any]:
+        """Shared implementation for `undo` and `redo`.
+
+        Loops `count` times calling the BN-level action, then calls
+        `update_analysis_and_wait()` once so any cached metadata
+        (e.g. `Function.can_return`, IL output) reflects the
+        post-action state when this returns. Batching N reverts
+        through a single call is much faster than N HTTP calls
+        because reanalysis only runs once at the end.
+        """
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        if action not in ("undo", "redo"):
+            raise ValueError(f"Unknown action {action!r}; use 'undo' or 'redo'")
+        n = int(count)
+        if n < 1:
+            raise ValueError(f"count must be >= 1, got {n}")
+
+        bv = self._current_view
+        op = getattr(bv, action, None)
+        if not callable(op):
+            raise RuntimeError(f"BinaryView.{action} is unavailable in this Binary Ninja version")
+
+        performed = 0
+        last_raw = None
+        for _ in range(n):
+            try:
+                last_raw = op()
+            except Exception as e:
+                raise RuntimeError(f"{action} failed after {performed} step(s): {e!s}")
+            performed += 1
+
+        # Single sync reanalysis after the batch — cheap when nothing
+        # is dirty, correct when the reverted action invalidated
+        # cached function metadata.
+        try:
+            bv.update_analysis_and_wait()
+        except Exception:
+            pass
+
+        result = self._undo_redo_state()
+        result.update(
+            {
+                "status": "ok",
+                "action": action,
+                "performed": performed,
+                "result": str(last_raw) if last_raw is not None else None,
+            }
+        )
+        return result
+
+    def undo(self, count: int = 1) -> dict[str, Any]:
+        """Undo the most recent `count` BN actions (default 1).
+
+        Args:
+            count: Number of consecutive undo steps to apply. Batched
+                in a single call so the post-revert reanalysis pass
+                only runs once at the end (much faster than `count`
+                separate HTTP calls for the same effect).
 
         Returns:
-            Dict with status, the action performed, BN's raw return value
-            stringified, and the post-call ``can_undo`` / ``can_redo``
-            flags so the agent can tell whether further undo is available.
+            Dict with status, the action performed, how many steps
+            actually ran (`performed`), BN's last raw return value
+            stringified, and post-call `can_undo` / `can_redo` flags.
 
         Raises:
-            RuntimeError: If no binary is loaded or BN refuses the call.
+            RuntimeError: If no binary is loaded or BN refuses an undo
+                step (the error message includes how many steps had
+                succeeded before the failure).
+            ValueError: If `count` is less than 1.
         """
-        if not self._current_view:
-            raise RuntimeError("No binary loaded")
-        bv = self._current_view
-        undo_call = getattr(bv, "undo", None)
-        if not callable(undo_call):
-            raise RuntimeError("BinaryView.undo is unavailable in this Binary Ninja version")
-        try:
-            raw = undo_call()
-        except Exception as e:
-            raise RuntimeError(f"undo failed: {e!s}")
-        result = self._undo_redo_state()
-        result.update(
-            {
-                "status": "ok",
-                "action": "undo",
-                "result": str(raw) if raw is not None else None,
-            }
-        )
-        return result
+        return self._undo_redo_loop("undo", count)
 
-    def redo(self) -> dict[str, Any]:
-        """Redo the most recently undone BN action, if any.
+    def redo(self, count: int = 1) -> dict[str, Any]:
+        """Redo the most recent `count` undone BN actions (default 1).
 
-        Same response shape as :meth:`undo`.
-
-        Raises:
-            RuntimeError: If no binary is loaded or BN refuses the call.
+        Same shape and batching semantics as :meth:`undo`.
         """
-        if not self._current_view:
-            raise RuntimeError("No binary loaded")
-        bv = self._current_view
-        redo_call = getattr(bv, "redo", None)
-        if not callable(redo_call):
-            raise RuntimeError("BinaryView.redo is unavailable in this Binary Ninja version")
-        try:
-            raw = redo_call()
-        except Exception as e:
-            raise RuntimeError(f"redo failed: {e!s}")
-        result = self._undo_redo_state()
-        result.update(
-            {
-                "status": "ok",
-                "action": "redo",
-                "result": str(raw) if raw is not None else None,
-            }
-        )
-        return result
+        return self._undo_redo_loop("redo", count)
 
     def reanalyze_function(self, function_ident: str | int) -> dict[str, Any]:
         """Trigger reanalysis of a single function.

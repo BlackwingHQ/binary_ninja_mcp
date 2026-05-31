@@ -1232,19 +1232,23 @@ def _format_undo_redo(data: dict, action: str) -> str:
 
 
 @mcp.tool()
-def undo() -> str:
+def undo(count: int = 1) -> str:
     """
-    Undo the most recent Binary Ninja action.
+    Undo the most recent `count` Binary Ninja actions (default 1).
 
     Useful when an experimental mutation didn't have the intended effect —
     e.g. `define_user_data_var` propagated a wrong type through xrefs, or
-    a `rename_function` decision should be reverted. One call rolls the
-    last action back without manually reconstructing the prior state.
+    a `rename_function` decision should be reverted. Pass `count > 1` to
+    revert a batch; one call is much cheaper than `count` separate calls
+    because the post-revert analysis pass only runs once at the end.
+
+    Args:
+        count: Number of consecutive undo steps to apply. Default 1.
 
     Returns:
         Status string including whether further undo / redo is available.
     """
-    data = get_json("undo")
+    data = get_json("undo", {"count": int(count)})
     if not data:
         return "Error: no response"
     if isinstance(data, dict) and data.get("error"):
@@ -1255,14 +1259,17 @@ def undo() -> str:
 
 
 @mcp.tool()
-def redo() -> str:
+def redo(count: int = 1) -> str:
     """
-    Redo the most recently undone Binary Ninja action.
+    Redo the most recently undone `count` Binary Ninja actions (default 1).
+
+    Args:
+        count: Number of consecutive redo steps to apply. Default 1.
 
     Returns:
         Status string including whether further undo / redo is available.
     """
-    data = get_json("redo")
+    data = get_json("redo", {"count": int(count)})
     if not data:
         return "Error: no response"
     if isinstance(data, dict) and data.get("error"):
