@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     '/Users/adowad/Blackwing/binary_ninja_mcp/tests/integration/fixtures/constructs'
+relocations:     []
+...

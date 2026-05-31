@@ -1,0 +1,4 @@
+# Compiled fixture binaries — rebuild via `build.sh`.
+constructs
+constructs.exe
+*.bndb

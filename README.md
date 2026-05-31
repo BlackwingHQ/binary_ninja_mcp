@@ -338,3 +338,19 @@ The `install_binaryninja_pth.py` script auto-detects the Binary Ninja Python fol
 ```bash
 scripts/check.sh
 ```
+
+#### Integration tests (live Binary Ninja)
+
+`tests/integration/` contains smoke tests that hit the plugin's HTTP server. They need Binary Ninja running with the plugin loaded and the fixture binary open.
+
+```bash
+# Compile the C fixture
+bash tests/integration/fixtures/build.sh
+# Open tests/integration/fixtures/constructs in Binary Ninja
+# Start the MCP server (left-bottom corner button) if it didn't auto-start
+.venv/bin/python -m pytest tests/integration/
+```
+
+If Binary Ninja isn't reachable, the auth token is missing/wrong, or the wrong binary is open, the suite is skipped.
+
+Override the server URL with `BINJA_MCP_URL=http://host:port` for non-default ports.
