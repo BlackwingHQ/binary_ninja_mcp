@@ -5631,13 +5631,19 @@ class BinaryOperations:
         end: int | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Find non-overlapping occurrences of an immediate constant.
+        """Find every instruction whose MLIL contains the given constant.
 
-        Backed by `BinaryView.find_next_constant`, which searches
-        *instructions* for the literal value — different from
-        `/findBytes`, which scans raw bytes. Use this to locate magic
-        values that appear as immediates rather than as byte sequences in
-        data.
+        Walks the MLIL of every analyzed function and recursively scans
+        each instruction's operand tree for ``MLIL_CONST`` /
+        ``MLIL_CONST_PTR`` leaves matching ``value``. Returns one entry
+        per (instruction address, function) pair where the constant
+        appears.
+
+        This is the right tool for "where is the magic value X used as
+        a literal in the code?". It is intentionally not backed by
+        BN's `find_next_constant`, which searches the linear-view text
+        and silently misses most instruction immediates (the `7` in
+        `i * 7`, the `1` in `mov w8, #0x1`, etc.).
 
         Args:
             value: The integer constant to search for.
@@ -5646,17 +5652,72 @@ class BinaryOperations:
             limit: Cap on results. 0 or negative means "no cap".
 
         Returns:
-            List of ``{"address": "0x...", "function": <name|None>}``.
+            List of ``{"address": "0x...", "function": <name>}``.
         """
         if not self._current_view:
             raise RuntimeError("No binary loaded")
         bv = self._current_view
-        find_next = getattr(bv, "find_next_constant", None)
-        if not callable(find_next):
-            raise RuntimeError(
-                "BinaryView.find_next_constant is unavailable in this Binary Ninja version"
-            )
-        return self._scan(find_next, int(value), start, end, limit, advance=1)
+
+        # Normalise to 64-bit unsigned so caller-supplied 0xFFFFFFFF
+        # matches BN's sign-extended -1 representation and vice versa.
+        target = int(value) & 0xFFFFFFFFFFFFFFFF
+        start_int = int(start) if start is not None else None
+        end_int = int(end) if end is not None else None
+        cap = int(limit) if limit and int(limit) > 0 else None
+
+        matches: list[dict[str, Any]] = []
+        for func in getattr(bv, "functions", []) or []:
+            mlil = getattr(func, "mlil", None)
+            if mlil is None:
+                continue
+            try:
+                instructions = list(mlil.instructions)
+            except Exception:
+                continue
+            seen_addrs_in_func: set[int] = set()
+            for instr in instructions:
+                try:
+                    addr = int(instr.address)
+                except Exception:
+                    continue
+                if start_int is not None and addr < start_int:
+                    continue
+                if end_int is not None and addr >= end_int:
+                    continue
+                if addr in seen_addrs_in_func:
+                    # One machine address can map to several MLIL
+                    # instructions; only report it once per function.
+                    continue
+                if self._expr_contains_const(instr, target):
+                    seen_addrs_in_func.add(addr)
+                    matches.append({"address": hex(addr), "function": getattr(func, "name", None)})
+                    if cap is not None and len(matches) >= cap:
+                        return matches
+        return matches
+
+    @staticmethod
+    def _expr_contains_const(expr: Any, target: int) -> bool:
+        """Recursively walk an MLIL expression tree and return True
+        iff any leaf is a constant whose value (normalised to 64-bit
+        unsigned) equals ``target``."""
+        op = getattr(expr, "operation", None)
+        op_name = str(op) if op is not None else ""
+        if "CONST" in op_name.upper():
+            c = getattr(expr, "constant", None)
+            if c is not None:
+                try:
+                    if (int(c) & 0xFFFFFFFFFFFFFFFF) == target:
+                        return True
+                except Exception:
+                    pass
+        for child in getattr(expr, "operands", []) or []:
+            # Only recurse into nodes that look like IL expressions
+            # themselves; bare ints, variables, etc. can't contain
+            # nested expressions.
+            if hasattr(child, "operation"):
+                if BinaryOperations._expr_contains_const(child, target):
+                    return True
+        return False
 
     def parse_expression(self, expr: str, here: int = 0) -> dict[str, Any]:
         """Evaluate a Binary Ninja expression string to an address.

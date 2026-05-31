@@ -157,19 +157,21 @@ def test_find_text_respects_bounds(binja_session, base_url):
 # ---------- /findConstant ----------
 
 
-def test_find_constant_zero_in_data_padding(binja_session, base_url):
-    """BN's `find_next_constant` reliably finds zero-valued bytes in
-    Mach-O / ELF padding regions — a decent canary that the endpoint
-    plumbing works end-to-end."""
-    r = binja_session.get(f"{base_url}/findConstant", params={"value": 0, "limit": 5}, timeout=15)
+def test_find_constant_finds_loop_multiplier(binja_session, base_url):
+    """The `i * 7` expression in `_compute_secret` references the
+    literal 7 — the headline use case for this endpoint. Every
+    matching site reports the containing function."""
+    r = binja_session.get(f"{base_url}/findConstant", params={"value": 7, "limit": 50}, timeout=15)
     r.raise_for_status()
     body = r.json()
-    assert body["value"] == "0x0"
+    assert body["value"] == "0x7"
     assert body["count"] >= 1
+    fns = {m["function"] for m in body["matches"]}
+    assert "_compute_secret" in fns
 
 
 def test_find_constant_unlikely_value_returns_empty(binja_session, base_url):
-    """A value chosen to be absent from the entire view yields zero
+    """A value chosen to be absent from every instruction yields zero
     matches without erroring."""
     r = binja_session.get(
         f"{base_url}/findConstant",
@@ -184,15 +186,35 @@ def test_find_constant_unlikely_value_returns_empty(binja_session, base_url):
 
 def test_find_constant_accepts_hex_and_decimal(binja_session, base_url):
     """The endpoint normalises both forms of the same value to the
-    same canonical `0x...` echo."""
+    same canonical `0x...` echo and the same match set."""
     by_dec = binja_session.get(
-        f"{base_url}/findConstant", params={"value": "16", "limit": 1}, timeout=15
+        f"{base_url}/findConstant", params={"value": "7", "limit": 50}, timeout=15
     ).json()
     by_hex = binja_session.get(
-        f"{base_url}/findConstant", params={"value": "0x10", "limit": 1}, timeout=15
+        f"{base_url}/findConstant", params={"value": "0x7", "limit": 50}, timeout=15
     ).json()
-    assert by_dec["value"] == "0x10"
-    assert by_hex["value"] == "0x10"
+    assert by_dec["value"] == "0x7"
+    assert by_hex["value"] == "0x7"
+    assert by_dec["matches"] == by_hex["matches"]
+
+
+def test_find_constant_respects_bounds(binja_session, base_url):
+    """An end= bound that excludes every site where the constant is
+    referenced must produce zero matches; widening to include those
+    sites must hit at least one."""
+    excluded = binja_session.get(
+        f"{base_url}/findConstant",
+        params={"value": 7, "start": "0x100000000", "end": "0x100000460", "limit": 50},
+        timeout=15,
+    ).json()
+    assert excluded["count"] == 0
+
+    included = binja_session.get(
+        f"{base_url}/findConstant",
+        params={"value": 7, "start": "0x100000000", "end": "0x1000004c4", "limit": 50},
+        timeout=15,
+    ).json()
+    assert included["count"] >= 1
 
 
 # ---------- /parseExpression ----------

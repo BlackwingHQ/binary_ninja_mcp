@@ -767,16 +767,26 @@ def parse_expression(expr: str, here: str = "0") -> str:
     """
     Evaluate a Binary Ninja expression to an address.
 
-    BN's expression language accepts symbol names, arithmetic (`+`, `-`,
-    `*`, `/`), hex (`0x...`) / decimal literals, and the `$here`
-    placeholder. Use this whenever you'd otherwise compute an address by
-    hand — `parse_expression("main+0x40")` returns the same string you'd
-    pass to `decompile_function`, `find_bytes`, `add_tag`, etc.
+    You usually do NOT need this. Every other tool that takes an
+    address (`decompile_function`, `get_xrefs_to`, `find_bytes`,
+    `add_tag`, ...) already accepts a symbol name directly, so
+    `parse_expression("main")` is just a slower way of passing
+    `"main"`. Reach for this tool when you actually need expression
+    evaluation — i.e. arithmetic on a symbol or `$here`-relative
+    offsets that you can't compute yourself.
+
+    Syntax notes:
+      - Use `$here` (with the leading `$`) for the placeholder; a
+        bare `here` resolves as a symbol name and produces a
+        confusing "No symbol named: here" error.
+      - Arithmetic operators: `+`, `-`, `*`, `/`.
+      - Hex literals: `0x401000`. Decimal literals: `4198400`.
 
     Args:
-        expr: Expression to evaluate (e.g. `"main+0x40"`, `"sub_401000+8"`,
-            `"&strtab"`).
-        here: Optional address substituted for `$here`. Hex or decimal.
+        expr: Expression to evaluate. Examples: `"main+0x40"`,
+            `"sub_401000+8"`, `"$here+4"`.
+        here: Address substituted for `$here` in `expr`. Hex or
+            decimal. Ignored if `$here` does not appear in `expr`.
             Default `"0"`.
 
     Returns:
@@ -802,12 +812,16 @@ def find_constant(
     limit: int = 100,
 ) -> list:
     """
-    Find non-overlapping occurrences of a numeric constant in instructions.
+    Find every instruction whose MLIL contains the given constant.
 
-    Backed by BN's `find_next_constant`, which scans *instructions* for
-    the literal value — different from `find_bytes`, which scans raw
-    bytes. Use this for magic values that appear as immediates ("where is
-    0xCAFEBABE loaded?", "where else is the polynomial 0xEDB88320 used?").
+    Walks every analyzed function's MLIL and recursively scans each
+    instruction's operand tree for a constant matching `value`.
+    Different from `find_bytes`, which scans raw bytes — use this
+    for "where is 0xCAFEBABE loaded?", "where else is polynomial
+    0xEDB88320 used?", "where does the code reference 7?".
+
+    Signed/unsigned ambiguity is handled: passing `0xffffffff` will
+    also match instructions where BN surfaces the value as -1.
 
     Args:
         value: Integer constant. Hex (with or without `0x`) or decimal.
