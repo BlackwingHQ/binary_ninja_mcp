@@ -219,13 +219,41 @@ def test_string_literal_decodes_hex_escapes(number_module):
     assert out["bytes"]["hex"] == "4142"
 
 
-def test_string_literal_backslash_n_not_decoded(number_module):
-    # Current behavior: the replacement table only matches doubly-escaped
-    # sequences (e.g. literal "\\n"), so a single-backslash "\n" in the
-    # input is preserved as bytes 5c 6e. Pinning the actual behavior so a
-    # future fix to the decoder is a deliberate, test-visible change.
-    out = number_module.convert_number(r'"A\n"', 0)
-    assert out["bytes"]["hex"] == "415c6e"
+@pytest.mark.parametrize(
+    "input_text, expected_hex",
+    [
+        (r'"A\n"', "410a"),
+        (r'"A\r"', "410d"),
+        (r'"A\t"', "4109"),
+        (r'"A\\"', "415c"),
+        (r'"A\""', "4122"),
+        (r'"A\'"', "4127"),
+        (r'"A\0"', "4100"),
+    ],
+)
+def test_string_literal_decodes_simple_escapes(number_module, input_text, expected_hex):
+    out = number_module.convert_number(input_text, 0)
+    assert out["bytes"]["hex"] == expected_hex
+
+
+def test_string_literal_double_backslash_not_corrupted_into_newline(number_module):
+    # `\\n` in the source means a literal backslash followed by an `n`.
+    # A naive multi-pass decoder would first replace `\\` with `\` and
+    # then turn the resulting `\n` into a real newline — wrong.
+    out = number_module.convert_number(r'"\\n"', 0)
+    assert out["bytes"]["hex"] == "5c6e"
+
+
+def test_string_literal_unknown_escape_kept_verbatim(number_module):
+    # `\z` is not a recognised escape — keep the backslash + `z`.
+    out = number_module.convert_number(r'"A\z"', 0)
+    assert out["bytes"]["hex"] == "415c7a"
+
+
+def test_string_literal_truncated_hex_escape_kept_verbatim(number_module):
+    # `\x` at end of string with no two hex digits after it stays literal.
+    out = number_module.convert_number(r'"A\x"', 0)
+    assert out["bytes"]["hex"] == "415c78"
 
 
 def test_string_c_string_escapes_special_bytes(number_module):

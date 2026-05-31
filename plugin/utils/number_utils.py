@@ -1,32 +1,50 @@
 import re
 
+_SIMPLE_ESCAPES = {
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "\\": "\\",
+    '"': '"',
+    "'": "'",
+    "0": "\x00",
+}
+
 
 def _decode_escaped_string(s: str) -> bytes:
     r"""Decode a C/JSON-like escaped string into raw bytes.
 
-    Supports: \n, \r, \t, \\ and \xNN hex escapes.
+    Supports `\n`, `\r`, `\t`, `\\`, `\"`, `\'`, `\0`, and `\xNN`.
+    Single-pass so `\\n` decodes to a literal backslash + `n` rather
+    than being corrupted into a real newline by a second replacement
+    round; unknown escapes (`\z`, truncated `\x`) are kept verbatim.
     """
-    # Replace common escapes first
-    replacements = {
-        r"\\n": "\n",
-        r"\\r": "\r",
-        r"\\t": "\t",
-        r"\\\\": "\\",
-        r"\"": '"',
-        r"\'": "'",
-    }
-    for k, v in replacements.items():
-        s = s.replace(k, v)
-
-    # Handle \xNN
-    def repl_hex(m):
-        try:
-            return bytes([int(m.group(1), 16)]).decode("latin1")
-        except Exception:
-            return m.group(0)
-
-    s = re.sub(r"\\x([0-9a-fA-F]{2})", repl_hex, s)
-    return s.encode("latin1", errors="ignore")
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    while i < n:
+        c = s[i]
+        if c != "\\" or i + 1 >= n:
+            out.append(c)
+            i += 1
+            continue
+        nxt = s[i + 1]
+        if nxt in _SIMPLE_ESCAPES:
+            out.append(_SIMPLE_ESCAPES[nxt])
+            i += 2
+            continue
+        if nxt == "x" and i + 3 < n:
+            hexdigits = s[i + 2 : i + 4]
+            try:
+                out.append(chr(int(hexdigits, 16)))
+                i += 4
+                continue
+            except ValueError:
+                pass
+        # Unknown / malformed escape: keep the backslash and move on.
+        out.append(c)
+        i += 1
+    return "".join(out).encode("latin1", errors="ignore")
 
 
 def _fits_unsigned(value: int, size: int) -> bool:
