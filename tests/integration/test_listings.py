@@ -147,16 +147,37 @@ def test_data_items_non_empty(binja_session, base_url):
         assert item.get("bytes_hex") is not None, item
 
 
+def test_data_items_includes_named_global(binja_session, base_url, anchors):
+    """The fixture exports `default_task` — a task_t global with
+    `.id=99, .pri=PRIORITY_HIGH, .label="default"`. It must appear
+    in the /data listing at the address `nm` reports for it, with
+    the struct type and a non-empty bytes_hex."""
+    r = binja_session.get(f"{base_url}/data", params={"limit": 500}, timeout=10)
+    r.raise_for_status()
+    items = r.json()["data"]
+    entry = next((d for d in items if d.get("name") == "default_task"), None)
+    assert entry is not None, "default_task missing from /data"
+    assert entry["address"] == anchors["default_task"]
+    assert "task_t" in entry.get("type", "")
+    assert entry["bytes_hex"]
+
+
 # ---------- local types ----------
 
 
-def test_local_types_empty_for_c_binary(binja_session, base_url):
-    """Vanilla C with no typedefs reports zero local types."""
+def test_local_types_includes_fixture_types(binja_session, base_url):
+    """The DWARF importer pulls task_t, priority_t, and value_view_t
+    into the view's local type list. `/localTypes` (without library
+    fallback) must surface all three."""
     r = binja_session.get(
-        f"{base_url}/localTypes", params={"count": 50, "include_libraries": "false"}, timeout=5
+        f"{base_url}/localTypes",
+        params={"count": 500, "include_libraries": "false"},
+        timeout=15,
     )
     r.raise_for_status()
-    assert r.json() == {"types": []}
+    names = {t["name"] for t in r.json()["types"]}
+    for expected in ("task_t", "priority_t", "value_view_t"):
+        assert expected in names, f"{expected} missing from local types: {names}"
 
 
 # ---------- tag types ----------

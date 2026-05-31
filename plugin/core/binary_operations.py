@@ -1578,18 +1578,20 @@ class BinaryOperations:
             except Exception:
                 pass
 
-            # Source 2: view.types (BN view-local types)
-            for k, v in self._current_view.types.items():
+            # Source 2: every named type the view knows about. Use
+            # `bv.type_names` + `bv.get_type_by_name` rather than
+            # iterating `bv.types`, because the latter misses types
+            # that BN's auto-loaders (DWARF, type libraries) registered
+            # — those live in `auto_type_container` and are surfaced
+            # to the view via name-lookup, not via the `types` dict.
+            try:
+                names = list(getattr(self._current_view, "type_names", []) or [])
+            except Exception:
+                names = []
+            for qname in names:
                 try:
-                    if isinstance(v, (tuple, list)) and len(v) >= 2:
-                        name = str(v[0])
-                        tobj = v[1]
-                    else:
-                        tobj = v
-                        name = getattr(v, "name", None)
-                        if not name:
-                            name = str(k)
-                    add_type_entry(name, tobj)
+                    tobj = self._current_view.get_type_by_name(qname)
+                    add_type_entry(str(qname), tobj)
                 except Exception:
                     continue
 
