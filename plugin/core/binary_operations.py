@@ -4997,94 +4997,33 @@ class BinaryOperations:
             "total": len(data_tags) + len(address_tags) + len(function_tags),
         }
 
-    def _undo_redo_state(self) -> dict[str, Any]:
-        """Snapshot of whether undo/redo are currently possible.
-
-        BN doesn't expose `can_undo`/`can_redo` directly; instead the
-        underlying FileMetadata carries `undo_entries`/`redo_entries`
-        lists. Each list is non-empty iff that direction is possible.
-        """
+    def _can_undo(self) -> bool | None:
+        """Whether undo is currently possible. None if undetermined."""
         bv = self._current_view
-        out: dict[str, Any] = {"can_undo": None, "can_redo": None}
         if bv is None:
-            return out
+            return None
         fmd = getattr(bv, "file", None)
         if fmd is None:
-            return out
-        for key, attr_name in (("can_undo", "undo_entries"), ("can_redo", "redo_entries")):
-            try:
-                entries = getattr(fmd, attr_name, None)
-                if entries is None:
-                    continue
-                out[key] = bool(list(entries))
-            except Exception:
-                out[key] = None
-        return out
-
-    def _undo_redo_loop(self, action: str, count: int) -> dict[str, Any]:
-        """Shared implementation for `undo` and `redo`.
-
-        Loops `count` times calling the BN-level action, then calls
-        `update_analysis_and_wait()` once so any cached metadata
-        (e.g. `Function.can_return`, IL output) reflects the
-        post-action state when this returns. Batching N reverts
-        through a single call is much faster than N HTTP calls
-        because reanalysis only runs once at the end.
-        """
-        if not self._current_view:
-            raise RuntimeError("No binary loaded")
-        if action not in ("undo", "redo"):
-            raise ValueError(f"Unknown action {action!r}; use 'undo' or 'redo'")
-        n = int(count)
-        if n < 1:
-            raise ValueError(f"count must be >= 1, got {n}")
-
-        bv = self._current_view
-        op = getattr(bv, action, None)
-        if not callable(op):
-            raise RuntimeError(f"BinaryView.{action} is unavailable in this Binary Ninja version")
-
-        performed = 0
-        last_raw = None
-        for _ in range(n):
-            try:
-                last_raw = op()
-            except Exception as e:
-                raise RuntimeError(f"{action} failed after {performed} step(s): {e!s}")
-            performed += 1
-
-        # Single sync reanalysis after the batch — cheap when nothing
-        # is dirty, correct when the reverted action invalidated
-        # cached function metadata.
+            return None
         try:
-            bv.update_analysis_and_wait()
+            entries = getattr(fmd, "undo_entries", None)
+            if entries is None:
+                return None
+            return bool(list(entries))
         except Exception:
-            pass
-
-        result = self._undo_redo_state()
-        result.update(
-            {
-                "status": "ok",
-                "action": action,
-                "performed": performed,
-                "result": str(last_raw) if last_raw is not None else None,
-            }
-        )
-        return result
+            return None
 
     def undo(self, count: int = 1) -> dict[str, Any]:
         """Undo the most recent `count` BN actions (default 1).
 
-        Args:
-            count: Number of consecutive undo steps to apply. Batched
-                in a single call so the post-revert reanalysis pass
-                only runs once at the end (much faster than `count`
-                separate HTTP calls for the same effect).
+        Batches all steps in a single call so the post-revert
+        reanalysis pass only runs once at the end — much faster than
+        `count` separate HTTP calls.
 
         Returns:
-            Dict with status, the action performed, how many steps
-            actually ran (`performed`), BN's last raw return value
-            stringified, and post-call `can_undo` / `can_redo` flags.
+            Dict with status, how many steps actually ran (`performed`),
+            BN's last raw return value stringified, and post-call
+            `can_undo`.
 
         Raises:
             RuntimeError: If no binary is loaded or BN refuses an undo
@@ -5092,14 +5031,38 @@ class BinaryOperations:
                 succeeded before the failure).
             ValueError: If `count` is less than 1.
         """
-        return self._undo_redo_loop("undo", count)
+        if not self._current_view:
+            raise RuntimeError("No binary loaded")
+        n = int(count)
+        if n < 1:
+            raise ValueError(f"count must be >= 1, got {n}")
 
-    def redo(self, count: int = 1) -> dict[str, Any]:
-        """Redo the most recent `count` undone BN actions (default 1).
+        bv = self._current_view
+        op = getattr(bv, "undo", None)
+        if not callable(op):
+            raise RuntimeError("BinaryView.undo is unavailable in this Binary Ninja version")
 
-        Same shape and batching semantics as :meth:`undo`.
-        """
-        return self._undo_redo_loop("redo", count)
+        performed = 0
+        last_raw = None
+        for _ in range(n):
+            try:
+                last_raw = op()
+            except Exception as e:
+                raise RuntimeError(f"undo failed after {performed} step(s): {e!s}")
+            performed += 1
+
+        try:
+            bv.update_analysis_and_wait()
+        except Exception:
+            pass
+
+        return {
+            "status": "ok",
+            "action": "undo",
+            "performed": performed,
+            "result": str(last_raw) if last_raw is not None else None,
+            "can_undo": self._can_undo(),
+        }
 
     def reanalyze_function(self, function_ident: str | int) -> dict[str, Any]:
         """Trigger reanalysis of a single function.

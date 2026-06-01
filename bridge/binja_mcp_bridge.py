@@ -1192,21 +1192,13 @@ def update_analysis() -> str:
     return str(data)
 
 
-def _format_undo_redo(data: dict, action: str) -> str:
+def _format_undo(data: dict) -> str:
     can_undo = data.get("can_undo")
-    can_redo = data.get("can_redo")
-    pieces = []
     if can_undo is True:
-        pieces.append("undo available")
-    elif can_undo is False:
-        pieces.append("no undo left")
-    if can_redo is True:
-        pieces.append("redo available")
-    elif can_redo is False:
-        pieces.append("no redo left")
-    suffix = f" ({'; '.join(pieces)})" if pieces else ""
-    verb = "Undone" if action == "undo" else "Redone"
-    return f"{verb}{suffix}"
+        return "Undone (undo available)"
+    if can_undo is False:
+        return "Undone (no undo left)"
+    return "Undone"
 
 
 @mcp.tool()
@@ -1224,7 +1216,7 @@ def undo(count: int = 1) -> str:
         count: Number of consecutive undo steps to apply. Default 1.
 
     Returns:
-        Status string including whether further undo / redo is available.
+        Status string including whether further undo is available.
     """
     data = get_json("undo", {"count": int(count)})
     if not data:
@@ -1232,28 +1224,7 @@ def undo(count: int = 1) -> str:
     if isinstance(data, dict) and data.get("error"):
         return f"Error: {data['error']}"
     if isinstance(data, dict) and data.get("status") == "ok":
-        return _format_undo_redo(data, "undo")
-    return str(data)
-
-
-@mcp.tool()
-def redo(count: int = 1) -> str:
-    """
-    Redo the most recently undone `count` Binary Ninja actions (default 1).
-
-    Args:
-        count: Number of consecutive redo steps to apply. Default 1.
-
-    Returns:
-        Status string including whether further undo / redo is available.
-    """
-    data = get_json("redo", {"count": int(count)})
-    if not data:
-        return "Error: no response"
-    if isinstance(data, dict) and data.get("error"):
-        return f"Error: {data['error']}"
-    if isinstance(data, dict) and data.get("status") == "ok":
-        return _format_undo_redo(data, "redo")
+        return _format_undo(data)
     return str(data)
 
 

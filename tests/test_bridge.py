@@ -44,41 +44,25 @@ def test_auth_headers_empty_when_no_token(bridge_module, tmp_path, monkeypatch):
     assert bridge_module._auth_headers() == {}
 
 
-# ---------- _format_undo_redo ----------
+# ---------- _format_undo ----------
 
 
-def test_format_undo_with_both_available(bridge_module):
-    out = bridge_module._format_undo_redo({"can_undo": True, "can_redo": True}, "undo")
-    assert out == "Undone (undo available; redo available)"
+def test_format_undo_with_more_available(bridge_module):
+    assert bridge_module._format_undo({"can_undo": True}) == "Undone (undo available)"
 
 
-def test_format_undo_with_only_undo_left(bridge_module):
-    out = bridge_module._format_undo_redo({"can_undo": True, "can_redo": False}, "undo")
-    assert out == "Undone (undo available; no redo left)"
+def test_format_undo_with_none_left(bridge_module):
+    assert bridge_module._format_undo({"can_undo": False}) == "Undone (no undo left)"
 
 
-def test_format_redo_with_no_more_undo(bridge_module):
-    out = bridge_module._format_undo_redo({"can_undo": False, "can_redo": True}, "redo")
-    assert out == "Redone (no undo left; redo available)"
+def test_format_undo_drops_missing_field(bridge_module):
+    assert bridge_module._format_undo({}) == "Undone"
 
 
-def test_format_undo_redo_drops_missing_fields(bridge_module):
-    # When can_undo/can_redo are absent, no suffix is appended
-    out = bridge_module._format_undo_redo({}, "undo")
-    assert out == "Undone"
-
-
-def test_format_undo_redo_ignores_non_bool_values(bridge_module):
+def test_format_undo_ignores_non_bool_value(bridge_module):
     # The formatter only reacts to literal True / False — other values
-    # (None, strings, numbers) produce no segment
-    out = bridge_module._format_undo_redo({"can_undo": None, "can_redo": "maybe"}, "undo")
-    assert out == "Undone"
-
-
-def test_format_undo_redo_unknown_action_uses_redone(bridge_module):
-    # The verb branch is "Undone" iff action == "undo", else "Redone"
-    out = bridge_module._format_undo_redo({"can_undo": True, "can_redo": True}, "redo")
-    assert out == "Redone (undo available; redo available)"
+    # (None, strings, numbers) produce no suffix.
+    assert bridge_module._format_undo({"can_undo": None}) == "Undone"
 
 
 # ---------- _format_tag ----------

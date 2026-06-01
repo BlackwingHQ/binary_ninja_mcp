@@ -2061,7 +2061,7 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling reanalyzeFunction: {e}")
                     self._send_json_response({"error": str(e)}, 500)
-            elif path in ("/undo", "/redo"):
+            elif path == "/undo":
                 count_raw = params.get("count") or "1"
                 try:
                     count = int(count_raw)
@@ -2071,15 +2071,14 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                         400,
                     )
                     return
-                op = self.binary_ops.undo if path == "/undo" else self.binary_ops.redo
                 try:
-                    self._send_json_response(op(count))
+                    self._send_json_response(self.binary_ops.undo(count))
                 except ValueError as ve:
                     self._send_json_response({"error": str(ve)}, 400)
                 except RuntimeError as re_err:
                     self._send_json_response({"error": str(re_err)}, 500)
                 except Exception as e:
-                    bn.log_error(f"Error handling {path}: {e}")
+                    bn.log_error(f"Error handling /undo: {e}")
                     self._send_json_response({"error": str(e)}, 500)
             elif path == "/tagTypes":
                 try:
