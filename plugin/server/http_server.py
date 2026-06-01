@@ -233,7 +233,12 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
             m = _re.match(r"^(?i)(?:data|byte|word|dword|qword|off|unk)_(?:0x)?([0-9a-fA-F]+)$", s)
             if m:
                 a = int(m.group(1), 16)
-                return a, s
+                # Only accept the heuristic when the parsed address is
+                # actually mapped — otherwise a typo'd name resolves to
+                # garbage and downstream reads return empty results that
+                # look successful.
+                if bv.get_segment_at(a) is not None:
+                    return a, s
         except Exception:
             pass
         # Scan data vars
