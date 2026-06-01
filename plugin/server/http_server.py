@@ -31,8 +31,9 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
         "/binaries",
         "/views",
         "/selectBinary",
+        "/load",
     )
-    _BINARY_OPTIONAL_POST_PATHS: ClassVar[set[str]] = {"/load"}
+    _BINARY_OPTIONAL_POST_PATHS: ClassVar[set[str]] = set()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2982,6 +2983,14 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                             "Send address, data, and optional save_to_file in a POST body. "
                             "save_to_file defaults to false."
                         ),
+                    },
+                    405,
+                )
+            elif path == "/load":
+                self._send_json_response(
+                    {
+                        "error": "Load requests must use POST",
+                        "help": "Send filepath in a POST body.",
                     },
                     405,
                 )

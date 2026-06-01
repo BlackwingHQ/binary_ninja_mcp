@@ -2022,6 +2022,34 @@ def select_binary(view: str) -> str:
 
 
 @mcp.tool()
+def load_binary(filepath: str) -> str:
+    """
+    Load a binary file from disk into Binary Ninja and make it the
+    active analysis target.
+
+    The user must approve the load via a UI prompt unless the file's
+    absolute path is listed in BN's `mcp.loadAllowList` setting.
+    Denied loads return an error.
+
+    - filepath: Absolute path to the binary file on disk.
+
+    To switch between binaries that are already open in Binary Ninja,
+    use `select_binary` instead.
+    """
+    result = post_json(
+        "load", {"filepath": filepath}, timeout=APPROVAL_OPERATION_TIMEOUT_SECONDS
+    )
+    if not result:
+        return "Error: no response"
+    if isinstance(result, dict):
+        if result.get("error"):
+            return f"Error: {result['error']}"
+        if result.get("success"):
+            return result.get("message") or f"Loaded: {filepath}"
+    return str(result)
+
+
+@mcp.tool()
 def delete_comment(address: str) -> str:
     """
     Delete the comment at a specific address.

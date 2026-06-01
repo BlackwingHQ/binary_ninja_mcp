@@ -1,3 +1,4 @@
+import os
 import platform
 import re
 import subprocess
@@ -40,43 +41,32 @@ class BinaryOperations:
             bn.log_info("Cleared current binary view")
 
     def load_binary(self, filepath: str) -> bn.BinaryView:
-        """Load a binary file using the appropriate method based on the Binary Ninja API version"""
-        try:
-            if hasattr(bn, "open_view"):
-                bn.log_info("Using bn.open_view method")
-                self._current_view = bn.open_view(filepath)
-            elif hasattr(bn, "BinaryViewType") and hasattr(bn.BinaryViewType, "get_view_of_file"):
-                bn.log_info("Using BinaryViewType.get_view_of_file method")
-                file_metadata = bn.FileMetadata()
-                try:
-                    if hasattr(bn.BinaryViewType, "get_default_options"):
-                        options = bn.BinaryViewType.get_default_options()
-                        self._current_view = bn.BinaryViewType.get_view_of_file(
-                            filepath, file_metadata, options
-                        )
-                    else:
-                        self._current_view = bn.BinaryViewType.get_view_of_file(
-                            filepath, file_metadata
-                        )
-                except TypeError:
-                    self._current_view = bn.BinaryViewType.get_view_of_file(filepath)
-            else:
-                bn.log_info("Using legacy method")
-                file_metadata = bn.FileMetadata()
-                binary_view_type = bn.BinaryViewType.get_view_of_file_with_options(
-                    filepath, file_metadata
-                )
-                if binary_view_type:
-                    self._current_view = binary_view_type.open()
-                else:
-                    raise Exception("No view type available for this file")
+        """Open a binary file and register the resulting view.
 
-            try:
-                if self._current_view is not None:
-                    self._register_view(self._current_view)
-            except Exception:
-                pass
-            return self._current_view
+        Idempotent: if the file is already tracked, returns the existing
+        view and makes it current. Calling bn.load on an already-loaded
+        file creates a duplicate headless view, and our dedup-by-filename
+        logic would then orphan the original (UI-held) view.
+        """
+        canonical = os.path.realpath(os.path.abspath(filepath))
+        existing_vid = self._id_by_filename.get(canonical)
+        if existing_vid:
+            w = self._views_by_id.get(existing_vid)
+            existing = w() if w else None
+            if existing is not None:
+                self._current_view = existing
+                return existing
+
+        try:
+            bv = bn.load(filepath)
+            if bv is None:
+                raise RuntimeError(f"bn.load returned None for: {filepath}")
+            # Register BEFORE assigning to _current_view: _register_view calls
+            # _prune_views, which clears _current_view if it's not in the
+            # tracked set yet. Assigning first would self-clobber to None.
+            self._register_view(bv)
+            self._current_view = bv
+            return bv
         except Exception as e:
             bn.log_error(f"Failed to load binary: {e}")
             raise
