@@ -42,6 +42,18 @@ def test_hexdump_by_name_unknown_symbol_returns_404(binja_session, base_url):
     assert r.status_code == 404
 
 
+def test_hexdump_by_name_bogus_data_underscore_returns_404(binja_session, base_url):
+    """`data_<hex>` is BN's auto-generated data-label convention.
+    The resolver parses the hex as an address but must verify it's
+    actually mapped — otherwise an agent typing a fake address
+    (`data_deadbeefcafe`) gets a plausible-looking empty hexdump
+    instead of a clear 404."""
+    r = binja_session.get(
+        f"{base_url}/hexdumpByName", params={"name": "data_deadbeefcafe"}, timeout=5
+    )
+    assert r.status_code == 404
+
+
 def test_get_data_decl_by_name_returns_struct_metadata(binja_session, base_url, anchors):
     """The declaration text and type field tell the agent what
     `default_task` actually is without it having to re-derive the

@@ -5045,6 +5045,12 @@ class BinaryOperations:
         performed = 0
         last_raw = None
         for _ in range(n):
+            # BN's bv.undo() returns None whether it actually undid an
+            # entry or the stack was empty — there's no in-band signal.
+            # Check can_undo before each step so an empty stack doesn't
+            # inflate `performed`.
+            if self._can_undo() is False:
+                break
             try:
                 last_raw = op()
             except Exception as e:
