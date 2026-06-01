@@ -5198,6 +5198,13 @@ class BinaryOperations:
         bv = self._current_view
         addr = int(address)
 
+        # Reject unmapped addresses up front. Without this guard, BN's
+        # define_user_data_var silently creates a phantom data variable
+        # at addresses with no backing storage — the agent sees
+        # status:ok but no real var exists.
+        if bv.get_segment_at(addr) is None:
+            raise ValueError(f"Address {hex(addr)} is not mapped in the binary")
+
         parsed_type = None
         try:
             parsed_type, _ = bv.parse_type_string(clean_type)

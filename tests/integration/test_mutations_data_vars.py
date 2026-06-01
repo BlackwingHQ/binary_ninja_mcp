@@ -121,6 +121,24 @@ def test_define_user_data_var_missing_params_returns_400(binja_session, base_url
     assert r.status_code == 400
 
 
+def test_define_user_data_var_unmapped_address_returns_error(binja_session, base_url):
+    """BN's `define_user_data_var` happily registers a phantom data
+    variable at an unmapped address — the agent thinks the operation
+    succeeded but the binary doesn't actually have any storage there.
+    The endpoint must reject unmapped addresses with a 4xx rather
+    than returning `status:"ok"`."""
+    r = binja_session.get(
+        f"{base_url}/defineUserDataVar",
+        params={"address": "0xdeadbeef0", "type": "uint32_t"},
+        timeout=10,
+    )
+    assert r.status_code >= 400, (
+        f"unmapped address should be rejected, got {r.status_code}: {r.text}"
+    )
+    body = r.json()
+    assert body.get("status") != "ok"
+
+
 # ---------- /undefineUserDataVar ----------
 
 
