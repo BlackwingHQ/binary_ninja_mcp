@@ -417,11 +417,25 @@ class BinaryNinjaEndpoints:
                 raise ValueError(f"Variable '{old_name}' not found in function '{function_name}'")
 
             variable.name = new_name
-            return {
-                "status": f"Successfully renamed variable '{old_name}' to '{new_name}' in function '{function_name}'"
-            }
         except Exception as e:
             raise ValueError(f"Failed to rename variable: {e!s}")
+
+        # Force a synchronous reanalysis so subsequent reads
+        # (/getStackFrameVars, /il, /decompile) see the new name
+        # immediately. Without this, BN keeps showing the old name
+        # for several seconds until analysis catches up.
+        try:
+            function.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
+            self.binary_ops.current_view.update_analysis_and_wait()
+        except Exception:
+            pass
+
+        return {
+            "status": (
+                f"Successfully renamed variable '{old_name}' to "
+                f"'{new_name}' in function '{function_name}'"
+            )
+        }
 
     def rename_variables(
         self,
@@ -567,9 +581,12 @@ class BinaryNinjaEndpoints:
                     }
                 )
 
-        # Best-effort reanalysis for consistency.
+        # Synchronous reanalysis so /getStackFrameVars and friends
+        # see the new names immediately instead of returning stale
+        # cached values for several seconds.
         try:
             func.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
+            self.binary_ops.current_view.update_analysis_and_wait()
         except Exception:
             pass
 
@@ -701,10 +718,12 @@ class BinaryNinjaEndpoints:
         if t is None:
             raise ValueError(f"Failed to parse prototype: {proto} ({last_error})")
 
-        # Apply and reanalyze
+        # Apply and synchronously reanalyze so /getFunctionMetadata
+        # and decompilation see the new prototype immediately.
         try:
             func.type = t
             func.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
+            self.binary_ops.current_view.update_analysis_and_wait()
         except Exception as e:
             raise ValueError(f"Failed applying type: {e!s}")
 
@@ -824,9 +843,11 @@ class BinaryNinjaEndpoints:
                 except Exception as e:
                     raise ValueError(f"Failed to set variable type: {e!s}")
 
-        # Trigger reanalysis for consistency
+        # Synchronous reanalysis so /getStackFrameVars sees the new
+        # type immediately.
         try:
             func.reanalyze(bn.FunctionUpdateType.UserFunctionUpdate)
+            self.binary_ops.current_view.update_analysis_and_wait()
         except Exception:
             pass
 
