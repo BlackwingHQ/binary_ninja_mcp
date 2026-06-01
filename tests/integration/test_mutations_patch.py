@@ -87,9 +87,7 @@ def patch_approved(binja_session, base_url, anchors):
             )
         )
     if r.status_code == 403:
-        pytest.skip(
-            _setup_hint(binja_session, base_url, "patch approval was denied.")
-        )
+        pytest.skip(_setup_hint(binja_session, base_url, "patch approval was denied."))
     r.raise_for_status()
     # The no-op patch still counts as an undo entry — clean up.
     binja_session.get(f"{base_url}/undo", timeout=10)

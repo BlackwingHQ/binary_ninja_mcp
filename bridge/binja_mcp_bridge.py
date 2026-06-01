@@ -2036,9 +2036,7 @@ def load_binary(filepath: str) -> str:
     To switch between binaries that are already open in Binary Ninja,
     use `select_binary` instead.
     """
-    result = post_json(
-        "load", {"filepath": filepath}, timeout=APPROVAL_OPERATION_TIMEOUT_SECONDS
-    )
+    result = post_json("load", {"filepath": filepath}, timeout=APPROVAL_OPERATION_TIMEOUT_SECONDS)
     if not result:
         return "Error: no response"
     if isinstance(result, dict):
@@ -2181,32 +2179,6 @@ def get_stack_frame_vars(function_identifier: str) -> list:
     if isinstance(data, dict) and data.get("stack_frame_vars"):
         return data["stack_frame_vars"]
     return []
-
-
-@mcp.tool()
-def format_value(address: str, text: str, size: int = 0) -> list:
-    """
-    Convert and annotate a value at an address in Binary Ninja.
-    Adds a comment with hex/dec and C literal/string so you can see the change.
-    """
-    return safe_get("formatValue", {"address": address, "text": text, "size": size}, timeout=None)
-
-
-@mcp.tool()
-def convert_number(text: str, size: int = 0) -> str:
-    """
-    Convert a number or string to multiple representations (hex/dec/bin, LE/BE, C char/string literals).
-    Accepts decimal (e.g., 123), hex (0x7b or 7Bh), binary (0b1111011), octal (0o173),
-    char ('A'), or string ("ABC" with escapes like \x41).
-    """
-    data = get_json("convertNumber", {"text": text, "size": size}, timeout=None)
-    if not data:
-        return "Error: no response"
-    if isinstance(data, dict) and data.get("error"):
-        return f"Error: {data['error']}"
-    import json as _json
-
-    return _json.dumps(data, indent=2, ensure_ascii=False)
 
 
 @mcp.tool()

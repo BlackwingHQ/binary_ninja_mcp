@@ -18,7 +18,6 @@ from ..utils.address import (
 from ..utils.approval import require_approval
 from ..utils.auth import matches as auth_matches
 from ..utils.auth import read_token, token_file_path
-from ..utils.number_utils import convert_number as util_convert_number
 from ..utils.string_utils import parse_int_or_default
 
 
@@ -26,7 +25,6 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
     binary_ops = None  # Will be set by the server
     _BINARY_OPTIONAL_PATH_PREFIXES: ClassVar[tuple[str, ...]] = (
         "/status",
-        "/convertNumber",
         "/platforms",
         "/binaries",
         "/views",
@@ -2813,84 +2811,6 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                     self._send_json_response(refs)
                 except Exception as e:
                     bn.log_error(f"Error handling getXrefsToEnum: {e}")
-                    self._send_json_response({"error": str(e)}, 500)
-
-            # '/displayAs' endpoint removed per request
-
-            elif path == "/formatValue":
-                # Compute representations and annotate BN at an address
-                text = params.get("text")
-                size_param = params.get("size")
-                address_str = params.get("address")
-                if not text or not address_str:
-                    self._send_json_response(
-                        {
-                            "error": "Missing parameters",
-                            "help": "Required: address, text. Optional: size",
-                            "received": params,
-                        },
-                        400,
-                    )
-                    return
-                try:
-                    addr = parse_address(address_str)
-                except ValueError as e:
-                    self._send_json_response({"error": str(e)}, 400)
-                    return
-
-                try:
-                    conv = util_convert_number(text, size_param)
-                    # Create a concise annotation
-                    bases = conv.get("bases", {})
-                    c_lit = conv.get("c_literal")
-                    c_str = conv.get("c_string")
-                    parts = []
-                    if "hex" in bases:
-                        parts.append(f"hex={bases['hex']}")
-                    if "dec" in bases:
-                        parts.append(f"dec={bases['dec']}")
-                    if c_lit:
-                        parts.append(f"char={c_lit}")
-                    if c_str:
-                        # Trim long strings for comments
-                        s = c_str
-                        if len(s) > 64:
-                            s = s[:61] + '"…'
-                        parts.append(f"str={s}")
-                    annot = "Converted: " + ", ".join(parts) if parts else f"Converted: {conv}"
-
-                    applied = self.binary_ops.set_comment(addr, annot)
-                    self._send_json_response(
-                        {
-                            "address": hex(addr),
-                            "converted": conv,
-                            "applied_comment": bool(applied),
-                            "comment": annot,
-                        }
-                    )
-                except Exception as e:
-                    bn.log_error(f"Error handling formatValue: {e}")
-                    self._send_json_response({"error": str(e)}, 500)
-
-            elif path == "/convertNumber":
-                # Compute number/string representations (bases, LE/BE, C literals)
-                try:
-                    text = params.get("text")
-                    size_param = params.get("size")
-                    if text is None:
-                        self._send_json_response(
-                            {
-                                "error": "Missing text parameter",
-                                "help": "Required: text. Optional: size (1,2,4,8 or 0 for auto)",
-                                "received": params,
-                            },
-                            400,
-                        )
-                        return
-                    conv = util_convert_number(text, size_param)
-                    self._send_json_response(conv)
-                except Exception as e:
-                    bn.log_error(f"Error handling convertNumber: {e}")
                     self._send_json_response({"error": str(e)}, 500)
 
             elif path == "/getXrefsToUnion":

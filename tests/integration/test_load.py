@@ -61,9 +61,7 @@ def load_approved(binja_session, base_url):
     yield
 
     # Restore by basename — survives view_id churn from headless loads.
-    binja_session.get(
-        f"{base_url}/selectBinary", params={"view": FIXTURE_PATH.name}, timeout=5
-    )
+    binja_session.get(f"{base_url}/selectBinary", params={"view": FIXTURE_PATH.name}, timeout=5)
 
 
 # ---------- happy-path ----------
@@ -100,8 +98,6 @@ def test_load_missing_filepath_returns_400(binja_session, base_url):
 def test_load_get_method_returns_405(binja_session, base_url):
     """/load is POST-only — GET returns 405 before any approval or
     load logic runs."""
-    r = binja_session.get(
-        f"{base_url}/load", params={"filepath": str(FIXTURE_PATH)}, timeout=5
-    )
+    r = binja_session.get(f"{base_url}/load", params={"filepath": str(FIXTURE_PATH)}, timeout=5)
     assert r.status_code == 405
     assert "POST" in r.json().get("error", "")

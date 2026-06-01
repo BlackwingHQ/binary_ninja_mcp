@@ -71,11 +71,6 @@ def address_module():
 
 
 @pytest.fixture(scope="session")
-def number_module():
-    return _load_module("_test_number_utils", "plugin/utils/number_utils.py")
-
-
-@pytest.fixture(scope="session")
 def string_module():
     return _load_module("_test_string_utils", "plugin/utils/string_utils.py")
 
