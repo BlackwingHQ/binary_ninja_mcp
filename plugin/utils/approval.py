@@ -9,8 +9,8 @@ operations is gated by:
      with `os.path.realpath` and matched exactly.
   2. An in-process session allow list, populated when the user clicks
      "Approve for this session" in the prompt. Cleared on plugin reload.
-  3. A three-button modal dialog (Approve once / Approve for this session /
-     Deny) shown on the UI thread.
+  3. A two-button modal dialog (Approve for this session / Deny) shown
+     on the UI thread.
 
 In headless mode or when no Qt application is available, the prompt step
 denies — only paths in the settings allow list are permitted.
@@ -51,8 +51,8 @@ def _allowlist(action: str) -> set[str]:
     return {_normalize(p) for p in raw if p}
 
 
-def _prompt(action: str, path: str, details: str) -> Literal["once", "session", "deny"]:
-    """Show the three-button modal on the UI thread and return the choice.
+def _prompt(action: str, path: str, details: str) -> Literal["session", "deny"]:
+    """Show the two-button modal on the UI thread and return the choice.
 
     Returns "deny" if no UI is available (headless run, no QApplication,
     Qt import failure, or any error inside the dialog).
@@ -72,15 +72,11 @@ def _prompt(action: str, path: str, details: str) -> Literal["once", "session", 
                 box.setIcon(QMessageBox.Warning)
                 box.setText(f"The MCP server is requesting a {action} operation.")
                 box.setInformativeText(f"File: {path}\n\n{details}")
-                once_btn = box.addButton("Approve once", QMessageBox.AcceptRole)
                 session_btn = box.addButton("Approve for this session", QMessageBox.AcceptRole)
                 deny_btn = box.addButton("Deny", QMessageBox.RejectRole)
                 box.setDefaultButton(deny_btn)
                 box.exec()
-                clicked = box.clickedButton()
-                if clicked is once_btn:
-                    result["choice"] = "once"
-                elif clicked is session_btn:
+                if box.clickedButton() is session_btn:
                     result["choice"] = "session"
                 else:
                     result["choice"] = "deny"
@@ -120,9 +116,6 @@ def require_approval(action: str, path: str | None, details: str = "") -> bool:
         return True
 
     choice = _prompt(action, norm, details)
-    if choice == "once":
-        bn.log_info(f"MCP {action} approved once for: {norm}")
-        return True
     if choice == "session":
         _session_approved[action].add(norm)
         bn.log_info(f"MCP {action} approved for session: {norm}")

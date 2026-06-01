@@ -156,30 +156,6 @@ def test_session_approval_isolated_per_action(
     assert approval_module.require_approval("patch", str(target)) is True
 
 
-# ---------- require_approval: one-off ----------
-
-
-def test_once_approval_does_not_persist(
-    approval_module, tmp_path, clear_session_approvals, monkeypatch
-):
-    target = tmp_path / "binary.bin"
-    target.write_bytes(b"")
-    monkeypatch.setattr(approval_module, "_allowlist", lambda action: set())
-
-    calls = []
-
-    def _prompt(action, path, details):
-        calls.append(1)
-        return "once"
-
-    monkeypatch.setattr(approval_module, "_prompt", _prompt)
-
-    assert approval_module.require_approval("patch", str(target)) is True
-    # Second call must prompt again
-    assert approval_module.require_approval("patch", str(target)) is True
-    assert len(calls) == 2
-
-
 # ---------- require_approval: deny ----------
 
 
