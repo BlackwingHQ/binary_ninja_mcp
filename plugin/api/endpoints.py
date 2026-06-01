@@ -600,43 +600,6 @@ class BinaryNinjaEndpoints:
             "results": results,
         }
 
-    def retype_variable(self, function_name: str, name: str, type_str: str) -> dict[str, str]:
-        """Retype a variable inside a function
-
-        Args:
-            function_name: Name of the function containing the variable
-            name: Current name of the variable
-            type: C type for the variable
-
-        Returns:
-            Dictionary with status message
-
-        Raises:
-            RuntimeError: If no binary is loaded
-            ValueError: If the function is not found or variable cannot be retyped
-        """
-        if not self.binary_ops.current_view:
-            raise RuntimeError("No binary loaded")
-
-        # Find the function by name
-        function = self.binary_ops.get_function_by_name_or_address(function_name)
-        if not function:
-            raise ValueError(f"Function '{function_name}' not found")
-
-        # Try to rename the variable
-        try:
-            # Get the variable by name and rename it
-            variable = function.get_variable_by_name(name)
-            if not variable:
-                raise ValueError(f"Variable '{name}' not found in function '{function_name}'")
-
-            variable.type = type_str
-            return {
-                "status": f"Successfully retyped variable '{name}' to '{type_str}' in function '{function_name}'"
-            }
-        except Exception as e:
-            raise ValueError(f"Failed to rename variable: {e!s}")
-
     def set_function_prototype(self, function_address: str | int, prototype: str) -> dict[str, str]:
         """Set a function's prototype by address.
 

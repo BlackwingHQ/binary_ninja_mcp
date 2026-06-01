@@ -242,28 +242,6 @@ def get_entry_points() -> list:
 
 
 @mcp.tool()
-def retype_variable(function_name: str, variable_name: str, type_str: str) -> str:
-    """
-    Retype a variable in a function.
-    """
-    data = get_json(
-        "retypeVariable",
-        {
-            "functionName": function_name,
-            "variableName": variable_name,
-            "type": type_str,
-        },
-    )
-    if not data:
-        return "Error: no response"
-    if isinstance(data, dict) and "status" in data:
-        return data["status"]
-    if isinstance(data, dict) and "error" in data:
-        return f"Error: {data['error']}"
-    return str(data)
-
-
-@mcp.tool()
 def rename_single_variable(function_name: str, variable_name: str, new_name: str) -> str:
     """
     Rename a variable in a function.

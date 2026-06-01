@@ -2572,32 +2572,6 @@ class MCPRequestHandler(BaseHTTPRequestHandler):
                 except Exception as e:
                     bn.log_error(f"Error handling setLocalVariableType request: {e}")
                     self._send_json_response({"error": str(e)}, 500)
-            elif path == "/retypeVariable":
-                function_name = params.get("functionName")
-                if not function_name:
-                    self._send_json_response({"error": "Missing function name parameter"}, 400)
-                    return
-
-                variable_name = params.get("variableName")
-                if not variable_name:
-                    self._send_json_response({"error": "Missing variable name parameter"}, 400)
-                    return
-
-                type_str = params.get("type")
-                if not type_str:
-                    self._send_json_response({"error": "Missing type parameter"}, 400)
-                    return
-
-                try:
-                    self._send_json_response(
-                        self.endpoints.retype_variable(function_name, variable_name, type_str)
-                    )
-                except Exception as e:
-                    bn.log_error(f"Error handling retypeVariable request: {e}")
-                    self._send_json_response(
-                        {"error": str(e)},
-                        500,
-                    )
             elif path == "/renameVariable":
                 function_name = params.get("functionName")
                 if not function_name:
