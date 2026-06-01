@@ -6042,14 +6042,9 @@ class BinaryOperations:
         if isinstance(data, bytes):
             patch_bytes = data
         elif isinstance(data, str):
-            # Try to parse as hex string
-            data_str = data.strip()
-            # Remove "0x" prefix if present
-            if data_str.startswith("0x"):
-                data_str = data_str[2:]
-            # Remove spaces
-            data_str = data_str.replace(" ", "").replace("\n", "").replace("\t", "")
-            # Convert hex string to bytes
+            # Accept "90 90", "9090", "0x9090", and "0x90 0x90".
+            data_str = data.strip().replace(" ", "").replace("\n", "").replace("\t", "")
+            data_str = data_str.replace("0x", "").replace("0X", "")
             try:
                 patch_bytes = bytes.fromhex(data_str)
             except ValueError as e:
@@ -6065,6 +6060,17 @@ class BinaryOperations:
 
         if not patch_bytes:
             raise ValueError("Empty patch data")
+
+        # Reject unmapped addresses up front. Without this guard, bv.write()
+        # silently reports the requested length as "written" for addresses
+        # outside any segment, masking the failure as a successful patch.
+        first_seg = self._current_view.get_segment_at(addr)
+        last_seg = self._current_view.get_segment_at(addr + len(patch_bytes) - 1)
+        if first_seg is None or last_seg is None:
+            raise ValueError(
+                f"Address range {hex(addr)}-{hex(addr + len(patch_bytes) - 1)} "
+                "is not mapped in the binary"
+            )
 
         # Read original bytes for comparison
         try:
